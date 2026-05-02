@@ -30,3 +30,10 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Local tool binaries fetched by the Makefile (controller-gen, setup-envtest, ...)
+/bin/
+
+# kubeconfig dumped by local kind clusters
+*.kubeconfig
+
