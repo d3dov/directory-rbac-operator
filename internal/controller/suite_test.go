@@ -67,6 +67,12 @@ var _ = BeforeSuite(func() {
 		Grouper: &stubGrouperResolver{groups: testGroups},
 	}).SetupWithManager(mgr)).To(Succeed())
 
+	Expect((&ClusterRBACGroupBindingReconciler{
+		Client:  mgr.GetClient(),
+		Scheme:  mgr.GetScheme(),
+		Grouper: &stubGrouperResolver{groups: testGroups},
+	}).SetupWithManager(mgr)).To(Succeed())
+
 	go func() {
 		defer GinkgoRecover()
 		Expect(mgr.Start(ctx)).To(Succeed())
@@ -82,7 +88,8 @@ var _ = AfterSuite(func() {
 // membership through, since specs exercise the reconciler against a real
 // envtest API server but never a real directory.
 var testGroups = map[string][]string{
-	"cn=data-team,ou=groups,dc=corp,dc=local": {"alice", "bob"},
+	"cn=data-team,ou=groups,dc=corp,dc=local":       {"alice", "bob"},
+	"cn=platform-admins,ou=groups,dc=corp,dc=local": {"carol"},
 }
 
 type stubGrouperResolver struct {

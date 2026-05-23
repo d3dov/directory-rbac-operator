@@ -15,14 +15,7 @@ rules:
 - apiGroups:
   - ldaprbac.io
   resources:
-  - ldapproviders
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ldaprbac.io
-  resources:
+  - clusterrbacgroupbindings
   - rbacgroupbindings
   verbs:
   - get
@@ -33,14 +26,24 @@ rules:
 - apiGroups:
   - ldaprbac.io
   resources:
+  - clusterrbacgroupbindings/status
   - rbacgroupbindings/status
   verbs:
   - get
   - patch
   - update
 - apiGroups:
+  - ldaprbac.io
+  resources:
+  - ldapproviders
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - rbac.authorization.k8s.io
   resources:
+  - clusterrolebindings
   - rolebindings
   verbs:
   - create
