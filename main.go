@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
@@ -13,6 +14,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	ldaprbacv1alpha1 "github.com/denis-da-engineer/directory-rbac-operator/api/v1alpha1"
+	"github.com/denis-da-engineer/directory-rbac-operator/internal/controller"
 	"github.com/denis-da-engineer/directory-rbac-operator/internal/version"
 )
 
@@ -27,11 +29,15 @@ func main() {
 	var metricsAddr string
 	var probeAddr string
 	var enableLeaderElection bool
+	var secretNamespace string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "Address the metrics endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "Address the health probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for the manager. Ensures only one active instance when running with multiple replicas.")
+	flag.StringVar(&secretNamespace, "secret-namespace", "directory-rbac-operator-system",
+		"Namespace consulted for every LDAPProvider's bindPasswordSecretRef/tlsConfig.caSecretRef. "+
+			"LDAPProvider is cluster-scoped and so cannot carry a Secret namespace of its own.")
 
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
@@ -50,6 +56,22 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
+
+	if err := controller.SetupIndexers(context.Background(), mgr); err != nil {
+		setupLog.Error(err, "unable to set up field indexers")
+		os.Exit(1)
+	}
+
+	grouperFactory := &controller.GrouperFactory{Client: mgr.GetClient(), SecretNamespace: secretNamespace}
+
+	if err := (&controller.RBACGroupBindingReconciler{
+		Client:  mgr.GetClient(),
+		Scheme:  mgr.GetScheme(),
+		Grouper: grouperFactory,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "RBACGroupBinding")
 		os.Exit(1)
 	}
 

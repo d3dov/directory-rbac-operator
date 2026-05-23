@@ -6,6 +6,12 @@ $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
 CONTROLLER_TOOLS_VERSION ?= v0.21.0
+ENVTEST_VERSION ?= v0.24.1
+ENVTEST_K8S_VERSION ?= 1.33.0
+
+.PHONY: envtest
+envtest: $(LOCALBIN) ## Ensure the envtest binaries (etcd, kube-apiserver, kubectl) are present.
+	go run sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path
 
 .PHONY: all
 all: build
@@ -44,5 +50,6 @@ tidy:
 	go mod tidy
 
 .PHONY: test
-test: fmt vet
-	go test ./... -count=1
+test: fmt vet envtest
+	KUBEBUILDER_ASSETS="$$(go run sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
+		go test ./... -count=1
