@@ -40,26 +40,51 @@ type Client struct {
 	cfg Config
 }
 
-var _ Grouper = (*Client)(nil)
+var (
+	_ Grouper = (*Client)(nil)
+	_ Pinger  = (*Client)(nil)
+)
 
 func New(cfg Config) *Client {
 	return &Client{cfg: cfg}
 }
 
-func (c *Client) GetGroupMembers(ctx context.Context, groupDN string) ([]string, error) {
+// Ping verifies the directory is reachable and the configured bind
+// credentials are accepted, without resolving any group membership. It backs
+// the LDAPProvider health check, which needs a signal independent of any
+// particular binding's groupDN.
+func (c *Client) Ping(ctx context.Context) error {
+	conn, err := c.connectAndBind(ctx)
+	if err != nil {
+		return err
+	}
+	conn.Close()
+	return nil
+}
+
+func (c *Client) connectAndBind(ctx context.Context) (*ldap.Conn, error) {
 	conn, err := c.dial()
 	if err != nil {
 		return nil, fmt.Errorf("ldapclient: dial: %w", err)
 	}
-	defer conn.Close()
 
 	if deadline, ok := ctx.Deadline(); ok {
 		conn.SetTimeout(time.Until(deadline))
 	}
 
 	if err := conn.Bind(c.cfg.BindDN, c.cfg.BindPassword); err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("ldapclient: bind: %w", err)
 	}
+	return conn, nil
+}
+
+func (c *Client) GetGroupMembers(ctx context.Context, groupDN string) ([]string, error) {
+	conn, err := c.connectAndBind(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
 
 	groupEntry, err := c.lookupGroup(conn, groupDN)
 	if err != nil {

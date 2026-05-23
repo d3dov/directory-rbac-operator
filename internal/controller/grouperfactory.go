@@ -2,6 +2,8 @@ package controller
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -19,20 +21,46 @@ type GrouperResolver interface {
 	Grouper(ctx context.Context, provider *ldaprbacv1alpha1.LDAPProvider) (ldapclient.Grouper, error)
 }
 
+// PingerResolver turns an LDAPProvider into something that can verify
+// connectivity/bind credentials. Backs the LDAPProviderReconciler health
+// check the same way GrouperResolver backs the binding reconcilers.
+type PingerResolver interface {
+	Pinger(ctx context.Context, provider *ldaprbacv1alpha1.LDAPProvider) (ldapclient.Pinger, error)
+}
+
 // GrouperFactory builds a real ldapclient.Client per LDAPProvider, resolving
-// its bind password from a Secret in SecretNamespace - LDAPProvider is
-// cluster-scoped and so has no namespace of its own to read Secrets from.
+// its bind password (and CA bundle, if configured) from Secrets in
+// SecretNamespace - LDAPProvider is cluster-scoped and so has no namespace of
+// its own to read Secrets from. The same *ldapclient.Client satisfies both
+// Grouper and Pinger, so Grouper and Pinger just build one and return it as
+// whichever interface the caller asked for.
 type GrouperFactory struct {
 	Client          client.Client
 	SecretNamespace string
 }
 
-var _ GrouperResolver = (*GrouperFactory)(nil)
+var (
+	_ GrouperResolver = (*GrouperFactory)(nil)
+	_ PingerResolver  = (*GrouperFactory)(nil)
+)
 
 func (f *GrouperFactory) Grouper(ctx context.Context, provider *ldaprbacv1alpha1.LDAPProvider) (ldapclient.Grouper, error) {
+	return f.client(ctx, provider)
+}
+
+func (f *GrouperFactory) Pinger(ctx context.Context, provider *ldaprbacv1alpha1.LDAPProvider) (ldapclient.Pinger, error) {
+	return f.client(ctx, provider)
+}
+
+func (f *GrouperFactory) client(ctx context.Context, provider *ldaprbacv1alpha1.LDAPProvider) (*ldapclient.Client, error) {
 	password, err := f.secretValue(ctx, provider.Spec.BindPasswordSecretRef)
 	if err != nil {
 		return nil, fmt.Errorf("bind password secret: %w", err)
+	}
+
+	tlsConfig, err := f.tlsConfig(ctx, provider)
+	if err != nil {
+		return nil, err
 	}
 
 	return ldapclient.New(ldapclient.Config{
@@ -40,10 +68,29 @@ func (f *GrouperFactory) Grouper(ctx context.Context, provider *ldaprbacv1alpha1
 		BindDN:            provider.Spec.BindDN,
 		BindPassword:      password,
 		InsecureSkipTLS:   provider.Spec.InsecureSkipTLS,
+		TLSConfig:         tlsConfig,
 		UserSearchBase:    provider.Spec.UserSearchBase,
 		GroupSearchBase:   provider.Spec.GroupSearchBase,
 		UsernameAttribute: provider.Spec.UsernameAttribute,
 	}), nil
+}
+
+func (f *GrouperFactory) tlsConfig(ctx context.Context, provider *ldaprbacv1alpha1.LDAPProvider) (*tls.Config, error) {
+	if provider.Spec.TLSConfig == nil || provider.Spec.TLSConfig.CASecretRef == nil {
+		return nil, nil
+	}
+
+	caPEM, err := f.secretValue(ctx, *provider.Spec.TLSConfig.CASecretRef)
+	if err != nil {
+		return nil, fmt.Errorf("ca bundle secret: %w", err)
+	}
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM([]byte(caPEM)) {
+		ref := provider.Spec.TLSConfig.CASecretRef
+		return nil, fmt.Errorf("ca bundle secret %s/%s: no valid PEM certificates found", f.SecretNamespace, ref.Name)
+	}
+	return &tls.Config{RootCAs: pool}, nil
 }
 
 func (f *GrouperFactory) secretValue(ctx context.Context, ref ldaprbacv1alpha1.SecretKeyRef) (string, error) {

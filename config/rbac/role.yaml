@@ -16,6 +16,7 @@ rules:
   - ldaprbac.io
   resources:
   - clusterrbacgroupbindings
+  - ldapproviders
   - rbacgroupbindings
   verbs:
   - get
@@ -27,6 +28,7 @@ rules:
   - ldaprbac.io
   resources:
   - clusterrbacgroupbindings/status
+  - ldapproviders/status
   - rbacgroupbindings/status
   verbs:
   - get
@@ -35,11 +37,9 @@ rules:
 - apiGroups:
   - ldaprbac.io
   resources:
-  - ldapproviders
+  - ldapproviders/finalizers
   verbs:
-  - get
-  - list
-  - watch
+  - update
 - apiGroups:
   - rbac.authorization.k8s.io
   resources:

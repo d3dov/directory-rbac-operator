@@ -73,6 +73,12 @@ var _ = BeforeSuite(func() {
 		Grouper: &stubGrouperResolver{groups: testGroups},
 	}).SetupWithManager(mgr)).To(Succeed())
 
+	Expect((&LDAPProviderReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		Pinger: &stubPingerResolver{},
+	}).SetupWithManager(mgr)).To(Succeed())
+
 	go func() {
 		defer GinkgoRecover()
 		Expect(mgr.Start(ctx)).To(Succeed())
@@ -99,3 +105,16 @@ type stubGrouperResolver struct {
 func (s *stubGrouperResolver) Grouper(_ context.Context, _ *ldaprbacv1alpha1.LDAPProvider) (ldapclient.Grouper, error) {
 	return &fake.Grouper{Groups: s.groups}, nil
 }
+
+// stubPingerResolver always reports success, since the health-check specs
+// only exercise LDAPProviderReconciler's own TLS-validation and status
+// wiring, never a real bind.
+type stubPingerResolver struct{}
+
+func (s *stubPingerResolver) Pinger(_ context.Context, _ *ldaprbacv1alpha1.LDAPProvider) (ldapclient.Pinger, error) {
+	return stubPinger{}, nil
+}
+
+type stubPinger struct{}
+
+func (stubPinger) Ping(_ context.Context) error { return nil }
