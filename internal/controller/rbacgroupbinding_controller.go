@@ -166,6 +166,10 @@ func (r *RBACGroupBindingReconciler) markDegraded(ctx context.Context, binding *
 		Type: ldaprbacv1alpha1.ConditionDegraded, Status: metav1.ConditionTrue,
 		Reason: ldaprbacv1alpha1.ReasonLDAPUnreachable, Message: cause.Error(),
 	})
+	meta.SetStatusCondition(&binding.Status.Conditions, metav1.Condition{
+		Type: ldaprbacv1alpha1.ConditionGroupNotFound, Status: metav1.ConditionFalse,
+		Reason: ldaprbacv1alpha1.ReasonLDAPUnreachable,
+	})
 
 	if err := r.Status().Update(ctx, binding); err != nil {
 		return ctrl.Result{}, err
@@ -187,6 +191,10 @@ func (r *RBACGroupBindingReconciler) markGroupNotFound(ctx context.Context, bind
 	})
 	meta.SetStatusCondition(&binding.Status.Conditions, metav1.Condition{
 		Type: ldaprbacv1alpha1.ConditionGroupNotFound, Status: metav1.ConditionTrue,
+		Reason: ldaprbacv1alpha1.ReasonGroupNotFound,
+	})
+	meta.SetStatusCondition(&binding.Status.Conditions, metav1.Condition{
+		Type: ldaprbacv1alpha1.ConditionDegraded, Status: metav1.ConditionFalse,
 		Reason: ldaprbacv1alpha1.ReasonGroupNotFound,
 	})
 

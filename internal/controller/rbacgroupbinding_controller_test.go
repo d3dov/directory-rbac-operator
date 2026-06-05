@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -37,6 +38,14 @@ var _ = Describe("RBACGroupBindingReconciler", func() {
 		Expect(k8sClient.Create(ctx, provider)).To(Succeed())
 		DeferCleanup(func() {
 			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, provider))).To(Succeed())
+			// LDAPProvider carries an in-use-protection finalizer, so
+			// deletion only completes once the reconciler observes no
+			// dependent bindings - wait for that, or the next spec's
+			// same-name Create races the still-terminating object.
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, client.ObjectKey{Name: providerName}, &ldaprbacv1alpha1.LDAPProvider{})
+				return apierrors.IsNotFound(err)
+			}).Should(BeTrue())
 		})
 	})
 
@@ -77,5 +86,42 @@ var _ = Describe("RBACGroupBindingReconciler", func() {
 			}
 			return "", nil
 		}).Should(Equal(metav1.ConditionTrue))
+	})
+
+	It("marks GroupNotFound (and not Degraded) when groupDN has no entry in the directory", func() {
+		binding := &ldaprbacv1alpha1.RBACGroupBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: "missing-group-binding", Namespace: namespace},
+			Spec: ldaprbacv1alpha1.RBACGroupBindingSpec{
+				ProviderRef: providerName,
+				GroupDN:     "cn=does-not-exist,ou=groups,dc=corp,dc=local",
+				RoleRef:     ldaprbacv1alpha1.RoleRef{Kind: "ClusterRole", Name: "view"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, binding))).To(Succeed())
+		})
+
+		conditionsByType := func() (map[string]metav1.ConditionStatus, error) {
+			var updated ldaprbacv1alpha1.RBACGroupBinding
+			if err := k8sClient.Get(ctx, client.ObjectKey{Name: binding.Name, Namespace: namespace}, &updated); err != nil {
+				return nil, err
+			}
+			out := map[string]metav1.ConditionStatus{}
+			for _, c := range updated.Status.Conditions {
+				out[c.Type] = c.Status
+			}
+			return out, nil
+		}
+
+		Eventually(conditionsByType).Should(SatisfyAll(
+			HaveKeyWithValue(ldaprbacv1alpha1.ConditionReady, metav1.ConditionFalse),
+			HaveKeyWithValue(ldaprbacv1alpha1.ConditionGroupNotFound, metav1.ConditionTrue),
+			HaveKeyWithValue(ldaprbacv1alpha1.ConditionDegraded, metav1.ConditionFalse),
+		))
+
+		var rb rbacv1.RoleBinding
+		err := k8sClient.Get(ctx, client.ObjectKey{Name: binding.Name, Namespace: namespace}, &rb)
+		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "no RoleBinding should be created for an unresolved group")
 	})
 })

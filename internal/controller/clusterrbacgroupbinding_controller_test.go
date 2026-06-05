@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -36,6 +37,12 @@ var _ = Describe("ClusterRBACGroupBindingReconciler", func() {
 		Expect(k8sClient.Create(ctx, provider)).To(Succeed())
 		DeferCleanup(func() {
 			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, provider))).To(Succeed())
+			// See the matching comment in rbacgroupbinding_controller_test.go:
+			// the in-use-protection finalizer makes deletion asynchronous.
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, client.ObjectKey{Name: providerName}, &ldaprbacv1alpha1.LDAPProvider{})
+				return apierrors.IsNotFound(err)
+			}).Should(BeTrue())
 		})
 	})
 
