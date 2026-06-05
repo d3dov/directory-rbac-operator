@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -64,13 +65,13 @@ var _ = BeforeSuite(func() {
 	Expect((&RBACGroupBindingReconciler{
 		Client:  mgr.GetClient(),
 		Scheme:  mgr.GetScheme(),
-		Grouper: &stubGrouperResolver{groups: testGroups},
+		Grouper: rbacGroupBindingGrouper,
 	}).SetupWithManager(mgr)).To(Succeed())
 
 	Expect((&ClusterRBACGroupBindingReconciler{
 		Client:  mgr.GetClient(),
 		Scheme:  mgr.GetScheme(),
-		Grouper: &stubGrouperResolver{groups: testGroups},
+		Grouper: clusterRBACGroupBindingGrouper,
 	}).SetupWithManager(mgr)).To(Succeed())
 
 	Expect((&LDAPProviderReconciler{
@@ -98,12 +99,47 @@ var testGroups = map[string][]string{
 	"cn=platform-admins,ou=groups,dc=corp,dc=local": {"carol"},
 }
 
+// rbacGroupBindingGrouper and clusterRBACGroupBindingGrouper are the
+// GrouperResolvers wired into the two binding reconcilers under test, kept
+// as suite-level vars so fail-safe specs can inject a forced error for a
+// specific provider (simulating an LDAP outage) without a real directory.
+var (
+	rbacGroupBindingGrouper        = &stubGrouperResolver{groups: testGroups}
+	clusterRBACGroupBindingGrouper = &stubGrouperResolver{groups: testGroups}
+)
+
 type stubGrouperResolver struct {
 	groups map[string][]string
+
+	mu        sync.Mutex
+	forcedErr map[string]error
 }
 
-func (s *stubGrouperResolver) Grouper(_ context.Context, _ *ldaprbacv1alpha1.LDAPProvider) (ldapclient.Grouper, error) {
+func (s *stubGrouperResolver) Grouper(_ context.Context, provider *ldaprbacv1alpha1.LDAPProvider) (ldapclient.Grouper, error) {
+	s.mu.Lock()
+	err := s.forcedErr[provider.Name]
+	s.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
 	return &fake.Grouper{Groups: s.groups}, nil
+}
+
+// setForcedError makes every subsequent Grouper() call for providerName fail
+// with err, as if the directory had become unreachable.
+func (s *stubGrouperResolver) setForcedError(providerName string, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.forcedErr == nil {
+		s.forcedErr = map[string]error{}
+	}
+	s.forcedErr[providerName] = err
+}
+
+func (s *stubGrouperResolver) clearForcedError(providerName string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.forcedErr, providerName)
 }
 
 // stubPingerResolver always reports success, since the health-check specs

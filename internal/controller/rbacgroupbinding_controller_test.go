@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -123,5 +124,78 @@ var _ = Describe("RBACGroupBindingReconciler", func() {
 		var rb rbacv1.RoleBinding
 		err := k8sClient.Get(ctx, client.ObjectKey{Name: binding.Name, Namespace: namespace}, &rb)
 		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "no RoleBinding should be created for an unresolved group")
+	})
+
+	It("leaves the managed RoleBinding's subjects untouched when the directory becomes unreachable", func() {
+		const failsafeProvider = "corp-ad-failsafe"
+		const failsafeBinding = "data-team-failsafe"
+
+		provider := &ldaprbacv1alpha1.LDAPProvider{
+			ObjectMeta: metav1.ObjectMeta{Name: failsafeProvider},
+			Spec: ldaprbacv1alpha1.LDAPProviderSpec{
+				URL:                   "ldaps://ad.corp.local:636",
+				BindDN:                "cn=svc,dc=corp,dc=local",
+				BindPasswordSecretRef: ldaprbacv1alpha1.SecretKeyRef{Name: "ldap-bind", Key: "password"},
+				UserSearchBase:        "ou=people,dc=corp,dc=local",
+				GroupSearchBase:       "ou=groups,dc=corp,dc=local",
+				SyncInterval:          metav1.Duration{Duration: 2 * time.Second},
+				UsernameAttribute:     "uid",
+			},
+		}
+		Expect(k8sClient.Create(ctx, provider)).To(Succeed())
+		DeferCleanup(func() {
+			rbacGroupBindingGrouper.clearForcedError(failsafeProvider)
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, provider))).To(Succeed())
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, client.ObjectKey{Name: failsafeProvider}, &ldaprbacv1alpha1.LDAPProvider{})
+				return apierrors.IsNotFound(err)
+			}).Should(BeTrue())
+		})
+
+		binding := &ldaprbacv1alpha1.RBACGroupBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: failsafeBinding, Namespace: namespace},
+			Spec: ldaprbacv1alpha1.RBACGroupBindingSpec{
+				ProviderRef: failsafeProvider,
+				GroupDN:     groupDN,
+				RoleRef:     ldaprbacv1alpha1.RoleRef{Kind: "ClusterRole", Name: "edit"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, binding))).To(Succeed())
+		})
+
+		wantSubjects := []rbacv1.Subject{
+			{Kind: "User", APIGroup: "rbac.authorization.k8s.io", Name: "alice"},
+			{Kind: "User", APIGroup: "rbac.authorization.k8s.io", Name: "bob"},
+		}
+
+		var rb rbacv1.RoleBinding
+		subjectsOf := func() ([]rbacv1.Subject, error) {
+			if err := k8sClient.Get(ctx, client.ObjectKey{Name: failsafeBinding, Namespace: namespace}, &rb); err != nil {
+				return nil, err
+			}
+			return rb.Subjects, nil
+		}
+		Eventually(subjectsOf).Should(ConsistOf(wantSubjects[0], wantSubjects[1]))
+
+		rbacGroupBindingGrouper.setForcedError(failsafeProvider, errors.New("simulated ldap outage"))
+
+		Eventually(func() (metav1.ConditionStatus, error) {
+			var updated ldaprbacv1alpha1.RBACGroupBinding
+			if err := k8sClient.Get(ctx, client.ObjectKey{Name: failsafeBinding, Namespace: namespace}, &updated); err != nil {
+				return "", err
+			}
+			for _, c := range updated.Status.Conditions {
+				if c.Type == ldaprbacv1alpha1.ConditionDegraded {
+					return c.Status, nil
+				}
+			}
+			return "", nil
+		}, "5s").Should(Equal(metav1.ConditionTrue))
+
+		// The outage keeps triggering reconciles (short syncInterval, plus
+		// the default backoff on error); subjects must survive all of them.
+		Consistently(subjectsOf, "3s").Should(ConsistOf(wantSubjects[0], wantSubjects[1]))
 	})
 })
