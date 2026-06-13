@@ -32,6 +32,12 @@ leaderElection:
 
 metrics:
   bindAddress: ":8080"
+  serviceMonitor:
+    # Requires the prometheus-operator CRDs; off by default so the chart
+    # installs cleanly without them.
+    enabled: false
+    interval: 30s
+    labels: {}
 
 healthProbe:
   bindAddress: ":8081"

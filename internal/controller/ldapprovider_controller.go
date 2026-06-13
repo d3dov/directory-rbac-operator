@@ -17,7 +17,10 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	ldaprbacv1alpha1 "github.com/denis-da-engineer/directory-rbac-operator/api/v1alpha1"
+	"github.com/denis-da-engineer/directory-rbac-operator/internal/metrics"
 )
+
+const ldapProviderKind = "LDAPProvider"
 
 // inUseProtectionFinalizer blocks LDAPProvider deletion while any binding
 // still references it, so removing a provider can never orphan bindings
@@ -46,6 +49,11 @@ type LDAPProviderReconciler struct {
 // +kubebuilder:rbac:groups=ldaprbac.io,resources=ldapproviders/finalizers,verbs=update
 
 func (r *LDAPProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	start := time.Now()
+	defer func() {
+		metrics.SyncDuration.WithLabelValues(ldapProviderKind).Observe(time.Since(start).Seconds())
+	}()
+
 	log := logf.FromContext(ctx)
 
 	var provider ldaprbacv1alpha1.LDAPProvider
@@ -142,6 +150,8 @@ func (r *LDAPProviderReconciler) hasDependents(ctx context.Context, provider *ld
 }
 
 func (r *LDAPProviderReconciler) markReady(ctx context.Context, provider *ldaprbacv1alpha1.LDAPProvider) (ctrl.Result, error) {
+	metrics.SyncTotal.WithLabelValues(ldapProviderKind, "ready").Inc()
+
 	provider.Status.ObservedGeneration = provider.Generation
 	now := metav1.Now()
 	provider.Status.LastVerifiedTime = &now
@@ -163,6 +173,8 @@ func (r *LDAPProviderReconciler) markReady(ctx context.Context, provider *ldaprb
 
 func (r *LDAPProviderReconciler) markDegraded(ctx context.Context, provider *ldaprbacv1alpha1.LDAPProvider, cause error) (ctrl.Result, error) {
 	r.Recorder.Event(provider, corev1.EventTypeWarning, "BindFailed", cause.Error())
+	metrics.SyncTotal.WithLabelValues(ldapProviderKind, "degraded").Inc()
+	metrics.LDAPErrorsTotal.WithLabelValues(provider.Name).Inc()
 
 	provider.Status.ObservedGeneration = provider.Generation
 
@@ -185,6 +197,7 @@ func (r *LDAPProviderReconciler) markDegraded(ctx context.Context, provider *lda
 // the spec, and that edit itself triggers a new reconcile.
 func (r *LDAPProviderReconciler) markInvalidSpec(ctx context.Context, provider *ldaprbacv1alpha1.LDAPProvider, cause error) (ctrl.Result, error) {
 	r.Recorder.Event(provider, corev1.EventTypeWarning, "InvalidSpec", cause.Error())
+	metrics.SyncTotal.WithLabelValues(ldapProviderKind, "invalid_spec").Inc()
 
 	provider.Status.ObservedGeneration = provider.Generation
 

@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "directory-rbac-operator.fullname" . }}-metrics
+  labels:
+    {{- include "directory-rbac-operator.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "directory-rbac-operator.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ (splitList ":" .Values.metrics.bindAddress) | last }}
+      targetPort: metrics

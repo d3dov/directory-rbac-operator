@@ -21,8 +21,11 @@ import (
 
 	ldaprbacv1alpha1 "github.com/denis-da-engineer/directory-rbac-operator/api/v1alpha1"
 	"github.com/denis-da-engineer/directory-rbac-operator/internal/ldapclient"
+	"github.com/denis-da-engineer/directory-rbac-operator/internal/metrics"
 	"github.com/denis-da-engineer/directory-rbac-operator/internal/rbacsync"
 )
+
+const clusterRBACGroupBindingKind = "ClusterRBACGroupBinding"
 
 // ClusterRBACGroupBindingReconciler syncs a ClusterRoleBinding's subjects to
 // an LDAP/AD group's membership. It mirrors RBACGroupBindingReconciler for
@@ -39,6 +42,11 @@ type ClusterRBACGroupBindingReconciler struct {
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
 
 func (r *ClusterRBACGroupBindingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	start := time.Now()
+	defer func() {
+		metrics.SyncDuration.WithLabelValues(clusterRBACGroupBindingKind).Observe(time.Since(start).Seconds())
+	}()
+
 	log := logf.FromContext(ctx)
 
 	var binding ldaprbacv1alpha1.ClusterRBACGroupBinding
@@ -142,6 +150,9 @@ func (r *ClusterRBACGroupBindingReconciler) markReady(ctx context.Context, bindi
 	binding.Status.MembersHash = rbacsync.MembersHash(members)
 	binding.Status.ClusterRoleBindingRef = &corev1.LocalObjectReference{Name: binding.Name}
 
+	metrics.SyncTotal.WithLabelValues(clusterRBACGroupBindingKind, "ready").Inc()
+	metrics.MembersCount.WithLabelValues(clusterRBACGroupBindingKind, "", binding.Name).Set(float64(len(members)))
+
 	meta.SetStatusCondition(&binding.Status.Conditions, metav1.Condition{
 		Type: ldaprbacv1alpha1.ConditionReady, Status: metav1.ConditionTrue,
 		Reason: ldaprbacv1alpha1.ReasonSyncSucceeded, Message: fmt.Sprintf("synced %d member(s)", len(members)),
@@ -163,6 +174,8 @@ func (r *ClusterRBACGroupBindingReconciler) markReady(ctx context.Context, bindi
 
 func (r *ClusterRBACGroupBindingReconciler) markDegraded(ctx context.Context, binding *ldaprbacv1alpha1.ClusterRBACGroupBinding, cause error) (ctrl.Result, error) {
 	r.Recorder.Event(binding, corev1.EventTypeWarning, "SyncFailed", cause.Error())
+	metrics.SyncTotal.WithLabelValues(clusterRBACGroupBindingKind, "degraded").Inc()
+	metrics.LDAPErrorsTotal.WithLabelValues(binding.Spec.ProviderRef).Inc()
 
 	binding.Status.ObservedGeneration = binding.Generation
 
@@ -187,6 +200,7 @@ func (r *ClusterRBACGroupBindingReconciler) markDegraded(ctx context.Context, bi
 
 func (r *ClusterRBACGroupBindingReconciler) markGroupNotFound(ctx context.Context, binding *ldaprbacv1alpha1.ClusterRBACGroupBinding, interval time.Duration) (ctrl.Result, error) {
 	r.Recorder.Event(binding, corev1.EventTypeWarning, "GroupNotFound", "groupDN not found in directory")
+	metrics.SyncTotal.WithLabelValues(clusterRBACGroupBindingKind, "group_not_found").Inc()
 
 	binding.Status.ObservedGeneration = binding.Generation
 
