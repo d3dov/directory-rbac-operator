@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -28,8 +29,9 @@ import (
 // the cluster-scoped binding type.
 type ClusterRBACGroupBindingReconciler struct {
 	client.Client
-	Scheme  *runtime.Scheme
-	Grouper GrouperResolver
+	Scheme   *runtime.Scheme
+	Grouper  GrouperResolver
+	Recorder record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=ldaprbac.io,resources=clusterrbacgroupbindings,verbs=get;list;watch;update;patch
@@ -73,22 +75,35 @@ func (r *ClusterRBACGroupBindingReconciler) Reconcile(ctx context.Context, req c
 		return ctrl.Result{}, err
 	}
 
-	if err := r.reconcileClusterRoleBinding(ctx, desired); err != nil {
+	outcome, err := r.reconcileClusterRoleBinding(ctx, desired)
+	if err != nil {
 		return r.markDegraded(ctx, &binding, err)
+	}
+
+	switch outcome {
+	case syncCreated:
+		r.Recorder.Eventf(&binding, corev1.EventTypeNormal, "ClusterRoleBindingCreated", "created ClusterRoleBinding %s with %d member(s)", desired.Name, len(members))
+	case syncUpdated:
+		r.Recorder.Eventf(&binding, corev1.EventTypeNormal, "ClusterRoleBindingUpdated", "updated ClusterRoleBinding %s to %d member(s)", desired.Name, len(members))
+	case syncRecreated:
+		r.Recorder.Eventf(&binding, corev1.EventTypeNormal, "ClusterRoleBindingRecreated", "recreated ClusterRoleBinding %s (clusterRoleRef changed)", desired.Name)
 	}
 
 	log.Info("synced group membership", "members", len(members))
 	return r.markReady(ctx, &binding, members, provider.Spec.SyncInterval.Duration)
 }
 
-func (r *ClusterRBACGroupBindingReconciler) reconcileClusterRoleBinding(ctx context.Context, desired *rbacv1.ClusterRoleBinding) error {
+func (r *ClusterRBACGroupBindingReconciler) reconcileClusterRoleBinding(ctx context.Context, desired *rbacv1.ClusterRoleBinding) (syncOutcome, error) {
 	var existing rbacv1.ClusterRoleBinding
 	err := r.Get(ctx, client.ObjectKeyFromObject(desired), &existing)
 	switch {
 	case apierrors.IsNotFound(err):
-		return r.Create(ctx, desired)
+		if err := r.Create(ctx, desired); err != nil {
+			return syncUnchanged, err
+		}
+		return syncCreated, nil
 	case err != nil:
-		return err
+		return syncUnchanged, err
 	}
 
 	if existing.RoleRef != desired.RoleRef {
@@ -96,17 +111,23 @@ func (r *ClusterRBACGroupBindingReconciler) reconcileClusterRoleBinding(ctx cont
 		// spec.clusterRoleRef edit is applied by deleting and recreating
 		// rather than updating.
 		if err := r.Delete(ctx, &existing); err != nil {
-			return err
+			return syncUnchanged, err
 		}
-		return r.Create(ctx, desired)
+		if err := r.Create(ctx, desired); err != nil {
+			return syncUnchanged, err
+		}
+		return syncRecreated, nil
 	}
 
 	if rbacsync.SubjectsEqual(existing.Subjects, desired.Subjects) {
-		return nil
+		return syncUnchanged, nil
 	}
 
 	existing.Subjects = desired.Subjects
-	return r.Update(ctx, &existing)
+	if err := r.Update(ctx, &existing); err != nil {
+		return syncUnchanged, err
+	}
+	return syncUpdated, nil
 }
 
 func (r *ClusterRBACGroupBindingReconciler) markReady(ctx context.Context, binding *ldaprbacv1alpha1.ClusterRBACGroupBinding, members []string, interval time.Duration) (ctrl.Result, error) {
@@ -141,6 +162,8 @@ func (r *ClusterRBACGroupBindingReconciler) markReady(ctx context.Context, bindi
 }
 
 func (r *ClusterRBACGroupBindingReconciler) markDegraded(ctx context.Context, binding *ldaprbacv1alpha1.ClusterRBACGroupBinding, cause error) (ctrl.Result, error) {
+	r.Recorder.Event(binding, corev1.EventTypeWarning, "SyncFailed", cause.Error())
+
 	binding.Status.ObservedGeneration = binding.Generation
 
 	meta.SetStatusCondition(&binding.Status.Conditions, metav1.Condition{
@@ -163,6 +186,8 @@ func (r *ClusterRBACGroupBindingReconciler) markDegraded(ctx context.Context, bi
 }
 
 func (r *ClusterRBACGroupBindingReconciler) markGroupNotFound(ctx context.Context, binding *ldaprbacv1alpha1.ClusterRBACGroupBinding, interval time.Duration) (ctrl.Result, error) {
+	r.Recorder.Event(binding, corev1.EventTypeWarning, "GroupNotFound", "groupDN not found in directory")
+
 	binding.Status.ObservedGeneration = binding.Generation
 
 	meta.SetStatusCondition(&binding.Status.Conditions, metav1.Condition{

@@ -70,27 +70,30 @@ func main() {
 	grouperFactory := &controller.GrouperFactory{Client: mgr.GetClient(), SecretNamespace: secretNamespace}
 
 	if err := (&controller.RBACGroupBindingReconciler{
-		Client:  mgr.GetClient(),
-		Scheme:  mgr.GetScheme(),
-		Grouper: grouperFactory,
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Grouper:  grouperFactory,
+		Recorder: mgr.GetEventRecorderFor("rbacgroupbinding-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RBACGroupBinding")
 		os.Exit(1)
 	}
 
 	if err := (&controller.ClusterRBACGroupBindingReconciler{
-		Client:  mgr.GetClient(),
-		Scheme:  mgr.GetScheme(),
-		Grouper: grouperFactory,
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Grouper:  grouperFactory,
+		Recorder: mgr.GetEventRecorderFor("clusterrbacgroupbinding-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ClusterRBACGroupBinding")
 		os.Exit(1)
 	}
 
 	if err := (&controller.LDAPProviderReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Pinger: grouperFactory,
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Pinger:   grouperFactory,
+		Recorder: mgr.GetEventRecorderFor("ldapprovider-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "LDAPProvider")
 		os.Exit(1)

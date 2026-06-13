@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -87,6 +88,20 @@ var _ = Describe("RBACGroupBindingReconciler", func() {
 			}
 			return "", nil
 		}).Should(Equal(metav1.ConditionTrue))
+
+		Eventually(func() ([]corev1.Event, error) {
+			var events corev1.EventList
+			if err := k8sClient.List(ctx, &events, client.InNamespace(namespace)); err != nil {
+				return nil, err
+			}
+			var matched []corev1.Event
+			for _, e := range events.Items {
+				if e.InvolvedObject.Name == bindingName && e.Reason == "RoleBindingCreated" {
+					matched = append(matched, e)
+				}
+			}
+			return matched, nil
+		}).ShouldNot(BeEmpty(), "expected a RoleBindingCreated event on the binding")
 	})
 
 	It("marks GroupNotFound (and not Degraded) when groupDN has no entry in the directory", func() {

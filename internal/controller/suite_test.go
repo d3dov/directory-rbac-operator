@@ -63,21 +63,24 @@ var _ = BeforeSuite(func() {
 	Expect(SetupIndexers(ctx, mgr)).To(Succeed())
 
 	Expect((&RBACGroupBindingReconciler{
-		Client:  mgr.GetClient(),
-		Scheme:  mgr.GetScheme(),
-		Grouper: rbacGroupBindingGrouper,
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Grouper:  rbacGroupBindingGrouper,
+		Recorder: mgr.GetEventRecorderFor("rbacgroupbinding-controller"),
 	}).SetupWithManager(mgr)).To(Succeed())
 
 	Expect((&ClusterRBACGroupBindingReconciler{
-		Client:  mgr.GetClient(),
-		Scheme:  mgr.GetScheme(),
-		Grouper: clusterRBACGroupBindingGrouper,
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Grouper:  clusterRBACGroupBindingGrouper,
+		Recorder: mgr.GetEventRecorderFor("clusterrbacgroupbinding-controller"),
 	}).SetupWithManager(mgr)).To(Succeed())
 
 	Expect((&LDAPProviderReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Pinger: &stubPingerResolver{},
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Pinger:   &stubPingerResolver{},
+		Recorder: mgr.GetEventRecorderFor("ldapprovider-controller"),
 	}).SetupWithManager(mgr)).To(Succeed())
 
 	go func() {

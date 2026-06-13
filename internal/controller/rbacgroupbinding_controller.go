@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -27,9 +28,22 @@ import (
 // LDAP/AD group's membership.
 type RBACGroupBindingReconciler struct {
 	client.Client
-	Scheme  *runtime.Scheme
-	Grouper GrouperResolver
+	Scheme   *runtime.Scheme
+	Grouper  GrouperResolver
+	Recorder record.EventRecorder
 }
+
+// syncOutcome distinguishes what reconcileRoleBinding actually did, so the
+// caller can emit an Event only when something changed rather than on every
+// no-op reconcile.
+type syncOutcome int
+
+const (
+	syncUnchanged syncOutcome = iota
+	syncCreated
+	syncUpdated
+	syncRecreated
+)
 
 // +kubebuilder:rbac:groups=ldaprbac.io,resources=rbacgroupbindings,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=ldaprbac.io,resources=rbacgroupbindings/status,verbs=get;update;patch
@@ -82,22 +96,35 @@ func (r *RBACGroupBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
-	if err := r.reconcileRoleBinding(ctx, desired); err != nil {
+	outcome, err := r.reconcileRoleBinding(ctx, desired)
+	if err != nil {
 		return r.markDegraded(ctx, &binding, err)
+	}
+
+	switch outcome {
+	case syncCreated:
+		r.Recorder.Eventf(&binding, corev1.EventTypeNormal, "RoleBindingCreated", "created RoleBinding %s with %d member(s)", desired.Name, len(members))
+	case syncUpdated:
+		r.Recorder.Eventf(&binding, corev1.EventTypeNormal, "RoleBindingUpdated", "updated RoleBinding %s to %d member(s)", desired.Name, len(members))
+	case syncRecreated:
+		r.Recorder.Eventf(&binding, corev1.EventTypeNormal, "RoleBindingRecreated", "recreated RoleBinding %s (roleRef changed)", desired.Name)
 	}
 
 	log.Info("synced group membership", "members", len(members))
 	return r.markReady(ctx, &binding, members, provider.Spec.SyncInterval.Duration)
 }
 
-func (r *RBACGroupBindingReconciler) reconcileRoleBinding(ctx context.Context, desired *rbacv1.RoleBinding) error {
+func (r *RBACGroupBindingReconciler) reconcileRoleBinding(ctx context.Context, desired *rbacv1.RoleBinding) (syncOutcome, error) {
 	var existing rbacv1.RoleBinding
 	err := r.Get(ctx, client.ObjectKeyFromObject(desired), &existing)
 	switch {
 	case apierrors.IsNotFound(err):
-		return r.Create(ctx, desired)
+		if err := r.Create(ctx, desired); err != nil {
+			return syncUnchanged, err
+		}
+		return syncCreated, nil
 	case err != nil:
-		return err
+		return syncUnchanged, err
 	}
 
 	if existing.RoleRef != desired.RoleRef {
@@ -105,17 +132,23 @@ func (r *RBACGroupBindingReconciler) reconcileRoleBinding(ctx context.Context, d
 		// rejects updates that change it), so a spec.roleRef edit is
 		// applied by deleting and recreating rather than updating.
 		if err := r.Delete(ctx, &existing); err != nil {
-			return err
+			return syncUnchanged, err
 		}
-		return r.Create(ctx, desired)
+		if err := r.Create(ctx, desired); err != nil {
+			return syncUnchanged, err
+		}
+		return syncRecreated, nil
 	}
 
 	if rbacsync.SubjectsEqual(existing.Subjects, desired.Subjects) {
-		return nil
+		return syncUnchanged, nil
 	}
 
 	existing.Subjects = desired.Subjects
-	return r.Update(ctx, &existing)
+	if err := r.Update(ctx, &existing); err != nil {
+		return syncUnchanged, err
+	}
+	return syncUpdated, nil
 }
 
 func (r *RBACGroupBindingReconciler) markReady(ctx context.Context, binding *ldaprbacv1alpha1.RBACGroupBinding, members []string, interval time.Duration) (ctrl.Result, error) {
@@ -156,6 +189,8 @@ func (r *RBACGroupBindingReconciler) markReady(ctx context.Context, binding *lda
 // default exponential-backoff rate limiter governs the retry, rather than a
 // hand-rolled backoff here.
 func (r *RBACGroupBindingReconciler) markDegraded(ctx context.Context, binding *ldaprbacv1alpha1.RBACGroupBinding, cause error) (ctrl.Result, error) {
+	r.Recorder.Event(binding, corev1.EventTypeWarning, "SyncFailed", cause.Error())
+
 	binding.Status.ObservedGeneration = binding.Generation
 
 	meta.SetStatusCondition(&binding.Status.Conditions, metav1.Condition{
@@ -183,6 +218,8 @@ func (r *RBACGroupBindingReconciler) markDegraded(ctx context.Context, binding *
 // group DN reappear, while periodic re-checks recover automatically if it
 // does.
 func (r *RBACGroupBindingReconciler) markGroupNotFound(ctx context.Context, binding *ldaprbacv1alpha1.RBACGroupBinding, interval time.Duration) (ctrl.Result, error) {
+	r.Recorder.Event(binding, corev1.EventTypeWarning, "GroupNotFound", "groupDN not found in directory")
+
 	binding.Status.ObservedGeneration = binding.Generation
 
 	meta.SetStatusCondition(&binding.Status.Conditions, metav1.Condition{

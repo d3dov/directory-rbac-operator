@@ -6,9 +6,11 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -34,8 +36,9 @@ const inUseRecheckInterval = 30 * time.Second
 // object.
 type LDAPProviderReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
-	Pinger PingerResolver
+	Scheme   *runtime.Scheme
+	Pinger   PingerResolver
+	Recorder record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=ldaprbac.io,resources=ldapproviders,verbs=get;list;watch;update;patch
@@ -114,6 +117,7 @@ func (r *LDAPProviderReconciler) finalize(ctx context.Context, provider *ldaprba
 	}
 	if inUse {
 		logf.FromContext(ctx).Info("deletion blocked: bindings still reference this provider")
+		r.Recorder.Event(provider, corev1.EventTypeWarning, "DeletionBlocked", "bindings still reference this provider")
 		return ctrl.Result{RequeueAfter: inUseRecheckInterval}, nil
 	}
 
@@ -158,6 +162,8 @@ func (r *LDAPProviderReconciler) markReady(ctx context.Context, provider *ldaprb
 }
 
 func (r *LDAPProviderReconciler) markDegraded(ctx context.Context, provider *ldaprbacv1alpha1.LDAPProvider, cause error) (ctrl.Result, error) {
+	r.Recorder.Event(provider, corev1.EventTypeWarning, "BindFailed", cause.Error())
+
 	provider.Status.ObservedGeneration = provider.Generation
 
 	meta.SetStatusCondition(&provider.Status.Conditions, metav1.Condition{
@@ -178,6 +184,8 @@ func (r *LDAPProviderReconciler) markDegraded(ctx context.Context, provider *lda
 // markInvalidSpec doesn't requeue: nothing will change until the user edits
 // the spec, and that edit itself triggers a new reconcile.
 func (r *LDAPProviderReconciler) markInvalidSpec(ctx context.Context, provider *ldaprbacv1alpha1.LDAPProvider, cause error) (ctrl.Result, error) {
+	r.Recorder.Event(provider, corev1.EventTypeWarning, "InvalidSpec", cause.Error())
+
 	provider.Status.ObservedGeneration = provider.Generation
 
 	meta.SetStatusCondition(&provider.Status.Conditions, metav1.Condition{
