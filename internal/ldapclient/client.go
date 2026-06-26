@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-ldap/ldap/v3"
+	"golang.org/x/time/rate"
 )
 
 // Config holds everything needed to open a connection and resolve group
@@ -29,6 +30,11 @@ type Config struct {
 	UserSearchBase    string
 	GroupSearchBase   string
 	UsernameAttribute string
+
+	// Limiter, if set, is waited on before every dial - shared across every
+	// Client built for the same provider (see Limiters), so the request
+	// budget is enforced per directory, not per Client instance.
+	Limiter *rate.Limiter
 }
 
 // Client resolves group membership by dialing, binding and querying fresh on
@@ -63,6 +69,12 @@ func (c *Client) Ping(ctx context.Context) error {
 }
 
 func (c *Client) connectAndBind(ctx context.Context) (*ldap.Conn, error) {
+	if c.cfg.Limiter != nil {
+		if err := c.cfg.Limiter.Wait(ctx); err != nil {
+			return nil, fmt.Errorf("ldapclient: rate limit: %w", err)
+		}
+	}
+
 	conn, err := c.dial()
 	if err != nil {
 		return nil, fmt.Errorf("ldapclient: dial: %w", err)

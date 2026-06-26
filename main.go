@@ -15,6 +15,7 @@ import (
 
 	ldaprbacv1alpha1 "github.com/denis-da-engineer/directory-rbac-operator/api/v1alpha1"
 	"github.com/denis-da-engineer/directory-rbac-operator/internal/controller"
+	"github.com/denis-da-engineer/directory-rbac-operator/internal/ldapclient"
 	"github.com/denis-da-engineer/directory-rbac-operator/internal/version"
 )
 
@@ -67,7 +68,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	grouperFactory := &controller.GrouperFactory{Client: mgr.GetClient(), SecretNamespace: secretNamespace}
+	limiters := &ldapclient.Limiters{}
+	grouperFactory := &controller.GrouperFactory{Client: mgr.GetClient(), SecretNamespace: secretNamespace, Limiters: limiters}
 
 	if err := (&controller.RBACGroupBindingReconciler{
 		Client:   mgr.GetClient(),
@@ -94,6 +96,7 @@ func main() {
 		Scheme:   mgr.GetScheme(),
 		Pinger:   grouperFactory,
 		Recorder: mgr.GetEventRecorderFor("ldapprovider-controller"),
+		Limiters: limiters,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "LDAPProvider")
 		os.Exit(1)

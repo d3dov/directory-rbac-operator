@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"fmt"
 
+	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -37,6 +38,12 @@ type PingerResolver interface {
 type GrouperFactory struct {
 	Client          client.Client
 	SecretNamespace string
+
+	// Limiters, if set, shares one rate limiter per provider name across
+	// every Client built for it - the health check and every binding
+	// reconciling against the same directory all draw from the same
+	// budget. Nil disables rate limiting entirely.
+	Limiters *ldapclient.Limiters
 }
 
 var (
@@ -63,6 +70,11 @@ func (f *GrouperFactory) client(ctx context.Context, provider *ldaprbacv1alpha1.
 		return nil, err
 	}
 
+	var limiter *rate.Limiter
+	if f.Limiters != nil {
+		limiter = f.Limiters.Get(provider.Name)
+	}
+
 	return ldapclient.New(ldapclient.Config{
 		URL:               provider.Spec.URL,
 		BindDN:            provider.Spec.BindDN,
@@ -72,6 +84,7 @@ func (f *GrouperFactory) client(ctx context.Context, provider *ldaprbacv1alpha1.
 		UserSearchBase:    provider.Spec.UserSearchBase,
 		GroupSearchBase:   provider.Spec.GroupSearchBase,
 		UsernameAttribute: provider.Spec.UsernameAttribute,
+		Limiter:           limiter,
 	}), nil
 }
 

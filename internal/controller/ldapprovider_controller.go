@@ -17,6 +17,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	ldaprbacv1alpha1 "github.com/denis-da-engineer/directory-rbac-operator/api/v1alpha1"
+	"github.com/denis-da-engineer/directory-rbac-operator/internal/ldapclient"
 	"github.com/denis-da-engineer/directory-rbac-operator/internal/metrics"
 )
 
@@ -42,6 +43,12 @@ type LDAPProviderReconciler struct {
 	Scheme   *runtime.Scheme
 	Pinger   PingerResolver
 	Recorder record.EventRecorder
+
+	// Limiters is the same registry GrouperFactory draws rate limiters from;
+	// finalize() deletes a provider's entry once it's actually gone, so a
+	// long-running operator doesn't accumulate one stale limiter per
+	// deleted provider. Nil is fine (no-op) if rate limiting is disabled.
+	Limiters *ldapclient.Limiters
 }
 
 // +kubebuilder:rbac:groups=ldaprbac.io,resources=ldapproviders,verbs=get;list;watch;update;patch
@@ -127,6 +134,10 @@ func (r *LDAPProviderReconciler) finalize(ctx context.Context, provider *ldaprba
 		logf.FromContext(ctx).Info("deletion blocked: bindings still reference this provider")
 		r.Recorder.Event(provider, corev1.EventTypeWarning, "DeletionBlocked", "bindings still reference this provider")
 		return ctrl.Result{RequeueAfter: inUseRecheckInterval}, nil
+	}
+
+	if r.Limiters != nil {
+		r.Limiters.Delete(provider.Name)
 	}
 
 	controllerutil.RemoveFinalizer(provider, inUseProtectionFinalizer)
