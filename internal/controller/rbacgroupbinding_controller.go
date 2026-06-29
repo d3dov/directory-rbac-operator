@@ -36,6 +36,14 @@ type RBACGroupBindingReconciler struct {
 // +kubebuilder:rbac:groups=ldaprbac.io,resources=ldapproviders,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
+//
+// The API server refuses to create/update a RoleBinding that grants
+// permissions the requester doesn't itself hold, unless the requester also
+// has "bind" on the referenced Role/ClusterRole - so binding roleRef.name to
+// arbitrary roles requires this regardless of scope. There's no way to
+// scope it to "only roles some future RBACGroupBinding references" ahead of
+// time; see the README security notes for the trade-off this implies.
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;clusterroles,verbs=bind
 
 func (r *RBACGroupBindingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)

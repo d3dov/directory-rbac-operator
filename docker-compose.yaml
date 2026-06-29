@@ -1,0 +1,11 @@
+services:
+  openldap:
+    image: osixia/openldap:1.5.0
+    container_name: directory-rbac-operator-openldap
+    environment:
+      LDAP_ORGANISATION: Corp
+      LDAP_DOMAIN: corp.local
+      LDAP_ADMIN_PASSWORD: admin
+      LDAP_TLS: "false"
+    ports:
+      - "389:389"

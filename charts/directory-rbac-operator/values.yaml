@@ -1,0 +1,61 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/denis-da-engineer/directory-rbac-operator
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+rbac:
+  create: true
+  # strict moves Secret access (the bindPasswordSecretRef/caSecretRef
+  # Secrets every LDAPProvider reads via --secret-namespace) from a
+  # cluster-wide ClusterRole rule into a namespaced Role scoped to the
+  # release namespace, so a compromised operator pod can't read Secrets
+  # outside its own namespace. Off by default for simplicity; the operator
+  # only ever reads secretNamespace regardless of this setting.
+  strict: false
+
+# secretNamespace overrides the namespace consulted for every LDAPProvider's
+# Secret refs (--secret-namespace). Empty defaults to the release namespace.
+secretNamespace: ""
+
+leaderElection:
+  enabled: false
+
+metrics:
+  bindAddress: ":8080"
+
+healthProbe:
+  bindAddress: ":8081"
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true

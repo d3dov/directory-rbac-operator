@@ -53,3 +53,31 @@ tidy:
 test: fmt vet envtest
 	KUBEBUILDER_ASSETS="$$(go run sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
 		go test ./... -count=1
+
+CHART_DIR := charts/directory-rbac-operator
+
+.PHONY: helm-crds
+helm-crds: manifests ## Sync generated CRD YAML into the Helm chart's crds/ directory.
+	cp config/crd/bases/*.yaml $(CHART_DIR)/crds/
+
+.PHONY: helm-lint
+helm-lint: helm-crds
+	helm lint $(CHART_DIR)
+
+.PHONY: helm-template
+helm-template: helm-crds
+	helm template directory-rbac-operator $(CHART_DIR)
+
+.PHONY: docker-build
+docker-build:
+	docker build -t directory-rbac-operator:dev .
+
+.PHONY: ldap-up
+ldap-up: ## Start local OpenLDAP and load the seed data (docker-compose.yaml).
+	docker compose up -d
+	docker compose exec -T openldap ldapadd -x -H ldap://localhost -D "cn=admin,dc=corp,dc=local" -w admin \
+		-f /dev/stdin < test/utils/ldif/seed.ldif
+
+.PHONY: ldap-down
+ldap-down:
+	docker compose down -v

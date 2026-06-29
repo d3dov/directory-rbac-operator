@@ -1,0 +1,62 @@
+# Seed data for local dev against osixia/openldap (base DN dc=corp,dc=local).
+#
+# Groups use groupOfNames with plain "member" DNs rather than relying on the
+# memberOf overlay, so this also exercises ldapclient's fallback path
+# (reverse memberOf query misses, group's own member attribute is read
+# instead) - the same thing a bare OpenLDAP install without that overlay
+# would hit.
+
+dn: ou=people,dc=corp,dc=local
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,dc=corp,dc=local
+objectClass: organizationalUnit
+ou: groups
+
+dn: uid=alice,ou=people,dc=corp,dc=local
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: alice
+cn: Alice Anderson
+sn: Anderson
+uidNumber: 10001
+gidNumber: 10001
+homeDirectory: /home/alice
+mail: alice@corp.local
+
+dn: uid=bob,ou=people,dc=corp,dc=local
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: bob
+cn: Bob Baker
+sn: Baker
+uidNumber: 10002
+gidNumber: 10002
+homeDirectory: /home/bob
+mail: bob@corp.local
+
+dn: uid=carol,ou=people,dc=corp,dc=local
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: carol
+cn: Carol Carter
+sn: Carter
+uidNumber: 10003
+gidNumber: 10003
+homeDirectory: /home/carol
+mail: carol@corp.local
+
+dn: cn=data-team,ou=groups,dc=corp,dc=local
+objectClass: groupOfNames
+cn: data-team
+member: uid=alice,ou=people,dc=corp,dc=local
+member: uid=bob,ou=people,dc=corp,dc=local
+
+dn: cn=platform-admins,ou=groups,dc=corp,dc=local
+objectClass: groupOfNames
+cn: platform-admins
+member: uid=carol,ou=people,dc=corp,dc=local

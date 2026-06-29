@@ -1,0 +1,48 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "directory-rbac-operator.fullname" . }}-manager-role
+  labels:
+    {{- include "directory-rbac-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["ldaprbac.io"]
+    resources: ["ldapproviders", "rbacgroupbindings", "clusterrbacgroupbindings"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["ldaprbac.io"]
+    resources: ["ldapproviders/status", "rbacgroupbindings/status", "clusterrbacgroupbindings/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["ldaprbac.io"]
+    resources: ["ldapproviders/finalizers"]
+    verbs: ["update"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["rolebindings", "clusterrolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Granting a RoleBinding/ClusterRoleBinding requires either already holding
+  # every permission it grants, or "bind" on the referenced Role/ClusterRole -
+  # there's no way to scope this to just the roles some future
+  # RBACGroupBinding will reference. See the README security notes.
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "clusterroles"]
+    verbs: ["bind"]
+  {{- if not .Values.rbac.strict }}
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "directory-rbac-operator.fullname" . }}-manager-rolebinding
+  labels:
+    {{- include "directory-rbac-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "directory-rbac-operator.fullname" . }}-manager-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "directory-rbac-operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
