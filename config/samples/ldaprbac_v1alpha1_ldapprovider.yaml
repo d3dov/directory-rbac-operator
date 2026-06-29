@@ -1,0 +1,14 @@
+apiVersion: ldaprbac.io/v1alpha1
+kind: LDAPProvider
+metadata:
+  name: corp-ad
+spec:
+  url: ldaps://ad.corp.local:636
+  bindDN: "CN=svc-k8s-sync,OU=ServiceAccounts,DC=corp,DC=local"
+  bindPasswordSecretRef:
+    name: ldap-bind-credentials
+    key: password
+  userSearchBase: "OU=People,DC=corp,DC=local"
+  groupSearchBase: "OU=Groups,DC=corp,DC=local"
+  syncInterval: 5m
+  usernameAttribute: sAMAccountName

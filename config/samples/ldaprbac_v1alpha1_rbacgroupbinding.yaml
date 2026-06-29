@@ -1,0 +1,11 @@
+apiVersion: ldaprbac.io/v1alpha1
+kind: RBACGroupBinding
+metadata:
+  name: data-team-edit
+  namespace: data-platform
+spec:
+  providerRef: corp-ad
+  groupDN: "CN=data-team,OU=Groups,DC=corp,DC=local"
+  roleRef:
+    kind: ClusterRole
+    name: edit

@@ -72,11 +72,11 @@ helm-template: helm-crds
 docker-build:
 	docker build -t directory-rbac-operator:dev .
 
-.PHONY: ldap-up
-ldap-up: ## Start local OpenLDAP and load the seed data (docker-compose.yaml).
-	docker compose up -d
+.PHONY: ldap-seed
+ldap-seed: ## Load test/utils/ldif/seed.ldif into the docker-compose OpenLDAP (must already be up).
+	until docker compose exec -T openldap ldapwhoami -x -H ldap://localhost >/dev/null 2>&1; do sleep 1; done
 	docker compose exec -T openldap ldapadd -x -H ldap://localhost -D "cn=admin,dc=corp,dc=local" -w admin \
-		-f /dev/stdin < test/utils/ldif/seed.ldif
+		< test/utils/ldif/seed.ldif
 
 .PHONY: ldap-down
 ldap-down:

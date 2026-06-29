@@ -1,0 +1,8 @@
+apiVersion: ldaprbac.io/v1alpha1
+kind: ClusterRBACGroupBinding
+metadata:
+  name: platform-admins
+spec:
+  providerRef: corp-ad
+  groupDN: "CN=platform-admins,OU=Groups,DC=corp,DC=local"
+  clusterRoleRef: cluster-admin
