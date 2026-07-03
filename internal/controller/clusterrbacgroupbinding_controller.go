@@ -8,16 +8,19 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	ldaprbacv1alpha1 "github.com/denis-da-engineer/directory-rbac-operator/api/v1alpha1"
 	"github.com/denis-da-engineer/directory-rbac-operator/internal/ldapclient"
@@ -35,6 +38,10 @@ type ClusterRBACGroupBindingReconciler struct {
 	Scheme   *runtime.Scheme
 	Grouper  GrouperResolver
 	Recorder record.EventRecorder
+
+	// SecretNamespace scopes the Secret-rotation watch below; see the
+	// matching field on RBACGroupBindingReconciler.
+	SecretNamespace string
 }
 
 // +kubebuilder:rbac:groups=ldaprbac.io,resources=clusterrbacgroupbindings,verbs=get;list;watch;update;patch
@@ -127,11 +134,17 @@ func (r *ClusterRBACGroupBindingReconciler) reconcileClusterRoleBinding(ctx cont
 		return syncRecreated, nil
 	}
 
-	if rbacsync.SubjectsEqual(existing.Subjects, desired.Subjects) {
+	// OwnerReferences is checked alongside Subjects for the same reason as
+	// RBACGroupBindingReconciler.reconcileRoleBinding: without a garbage
+	// collector guaranteeing a same-named prior object is gone first,
+	// "existing" could be a leftover ClusterRoleBinding from a different,
+	// already-deleted binding of the same name.
+	if rbacsync.SubjectsEqual(existing.Subjects, desired.Subjects) && apiequality.Semantic.DeepEqual(existing.OwnerReferences, desired.OwnerReferences) {
 		return syncUnchanged, nil
 	}
 
 	existing.Subjects = desired.Subjects
+	existing.OwnerReferences = desired.OwnerReferences
 	if err := r.Update(ctx, &existing); err != nil {
 		return syncUnchanged, err
 	}
@@ -228,5 +241,9 @@ func (r *ClusterRBACGroupBindingReconciler) SetupWithManager(mgr ctrl.Manager) e
 		For(&ldaprbacv1alpha1.ClusterRBACGroupBinding{}).
 		Owns(&rbacv1.ClusterRoleBinding{}).
 		Watches(&ldaprbacv1alpha1.LDAPProvider{}, handler.EnqueueRequestsFromMapFunc(mapProviderToClusterRBACGroupBindings(mgr.GetClient()))).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(mapSecretToClusterRBACGroupBindings(mgr.GetClient())),
+			builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+				return obj.GetNamespace() == r.SecretNamespace
+			}))).
 		Complete(r)
 }

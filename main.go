@@ -72,20 +72,22 @@ func main() {
 	grouperFactory := &controller.GrouperFactory{Client: mgr.GetClient(), SecretNamespace: secretNamespace, Limiters: limiters}
 
 	if err := (&controller.RBACGroupBindingReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Grouper:  grouperFactory,
-		Recorder: mgr.GetEventRecorderFor("rbacgroupbinding-controller"),
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		Grouper:         grouperFactory,
+		Recorder:        mgr.GetEventRecorderFor("rbacgroupbinding-controller"),
+		SecretNamespace: secretNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RBACGroupBinding")
 		os.Exit(1)
 	}
 
 	if err := (&controller.ClusterRBACGroupBindingReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Grouper:  grouperFactory,
-		Recorder: mgr.GetEventRecorderFor("clusterrbacgroupbinding-controller"),
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		Grouper:         grouperFactory,
+		Recorder:        mgr.GetEventRecorderFor("clusterrbacgroupbinding-controller"),
+		SecretNamespace: secretNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ClusterRBACGroupBinding")
 		os.Exit(1)

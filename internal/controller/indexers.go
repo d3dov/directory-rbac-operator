@@ -13,6 +13,11 @@ import (
 // watch mappers use to find dependents without a linear scan.
 const providerRefIndexField = ".spec.providerRef"
 
+// secretRefIndexField lets the Secret-rotation watch mappers find every
+// LDAPProvider that reads a given Secret (bind password or CA bundle) name,
+// without a linear scan.
+const secretRefIndexField = ".spec.secretRefs"
+
 // SetupIndexers registers the field indexers shared by the binding
 // reconcilers. Call it once against the manager's cache before starting any
 // controller that depends on it.
@@ -27,6 +32,18 @@ func SetupIndexers(ctx context.Context, mgr indexerManager) error {
 	if err := mgr.GetFieldIndexer().IndexField(ctx, &ldaprbacv1alpha1.ClusterRBACGroupBinding{}, providerRefIndexField,
 		func(obj client.Object) []string {
 			return []string{obj.(*ldaprbacv1alpha1.ClusterRBACGroupBinding).Spec.ProviderRef}
+		}); err != nil {
+		return err
+	}
+
+	if err := mgr.GetFieldIndexer().IndexField(ctx, &ldaprbacv1alpha1.LDAPProvider{}, secretRefIndexField,
+		func(obj client.Object) []string {
+			p := obj.(*ldaprbacv1alpha1.LDAPProvider)
+			keys := []string{p.Spec.BindPasswordSecretRef.Name}
+			if p.Spec.TLSConfig != nil && p.Spec.TLSConfig.CASecretRef != nil {
+				keys = append(keys, p.Spec.TLSConfig.CASecretRef.Name)
+			}
+			return keys
 		}); err != nil {
 		return err
 	}

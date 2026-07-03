@@ -32,8 +32,8 @@ const inUseProtectionFinalizer = "ldaprbac.io/in-use-protection"
 // last dependent binding disappearing. LDAPProviderReconciler doesn't watch
 // binding objects directly, so this polls the provider-ref index instead of
 // adding another watch/mapper pair for what is a rare, non-latency-sensitive
-// path.
-const inUseRecheckInterval = 30 * time.Second
+// path. Var rather than const so tests can shorten it.
+var inUseRecheckInterval = 30 * time.Second
 
 // LDAPProviderReconciler runs a bind-only health check against the
 // directory a LDAPProvider describes; it does not itself touch any RBAC

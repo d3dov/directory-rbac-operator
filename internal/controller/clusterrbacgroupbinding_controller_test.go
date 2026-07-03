@@ -83,4 +83,48 @@ var _ = Describe("ClusterRBACGroupBindingReconciler", func() {
 			return "", nil
 		}).Should(Equal(metav1.ConditionTrue))
 	})
+
+	It("deletes and recreates the ClusterRoleBinding when spec.clusterRoleRef changes, since RoleRef is immutable", func() {
+		const immutableBindingName = "platform-admins-roleref-change"
+
+		binding := &ldaprbacv1alpha1.ClusterRBACGroupBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: immutableBindingName},
+			Spec: ldaprbacv1alpha1.ClusterRBACGroupBindingSpec{
+				ProviderRef:    providerName,
+				GroupDN:        groupDN,
+				ClusterRoleRef: "cluster-admin",
+			},
+		}
+		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, binding))).To(Succeed())
+		})
+
+		var crb rbacv1.ClusterRoleBinding
+		Eventually(func() (rbacv1.RoleRef, error) {
+			if err := k8sClient.Get(ctx, client.ObjectKey{Name: immutableBindingName}, &crb); err != nil {
+				return rbacv1.RoleRef{}, err
+			}
+			return crb.RoleRef, nil
+		}).Should(Equal(rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: "cluster-admin"}))
+		originalUID := crb.UID
+
+		Eventually(func() error {
+			var updated ldaprbacv1alpha1.ClusterRBACGroupBinding
+			if err := k8sClient.Get(ctx, client.ObjectKey{Name: immutableBindingName}, &updated); err != nil {
+				return err
+			}
+			updated.Spec.ClusterRoleRef = "view"
+			return k8sClient.Update(ctx, &updated)
+		}).Should(Succeed())
+
+		Eventually(func() (rbacv1.RoleRef, error) {
+			if err := k8sClient.Get(ctx, client.ObjectKey{Name: immutableBindingName}, &crb); err != nil {
+				return rbacv1.RoleRef{}, err
+			}
+			return crb.RoleRef, nil
+		}).Should(Equal(rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: "view"}))
+
+		Expect(crb.UID).NotTo(Equal(originalUID), "expected a new object (delete+recreate), not an in-place update")
+	})
 })

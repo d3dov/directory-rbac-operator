@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -37,6 +38,8 @@ func TestControllers(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
+	inUseRecheckInterval = 200 * time.Millisecond
+
 	ctx, cancel = context.WithCancel(context.Background())
 
 	testEnv = &envtest.Environment{
@@ -63,17 +66,19 @@ var _ = BeforeSuite(func() {
 	Expect(SetupIndexers(ctx, mgr)).To(Succeed())
 
 	Expect((&RBACGroupBindingReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Grouper:  rbacGroupBindingGrouper,
-		Recorder: mgr.GetEventRecorderFor("rbacgroupbinding-controller"),
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		Grouper:         rbacGroupBindingGrouper,
+		Recorder:        mgr.GetEventRecorderFor("rbacgroupbinding-controller"),
+		SecretNamespace: testSecretNamespace,
 	}).SetupWithManager(mgr)).To(Succeed())
 
 	Expect((&ClusterRBACGroupBindingReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Grouper:  clusterRBACGroupBindingGrouper,
-		Recorder: mgr.GetEventRecorderFor("clusterrbacgroupbinding-controller"),
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		Grouper:         clusterRBACGroupBindingGrouper,
+		Recorder:        mgr.GetEventRecorderFor("clusterrbacgroupbinding-controller"),
+		SecretNamespace: testSecretNamespace,
 	}).SetupWithManager(mgr)).To(Succeed())
 
 	Expect((&LDAPProviderReconciler{
@@ -93,6 +98,10 @@ var _ = AfterSuite(func() {
 	cancel()
 	Expect(testEnv.Stop()).To(Succeed())
 })
+
+// testSecretNamespace matches --secret-namespace in production wiring;
+// "default" is where every test in this suite already creates its objects.
+const testSecretNamespace = "default"
 
 // testGroups seeds the stub Grouper every spec in this suite resolves
 // membership through, since specs exercise the reconciler against a real
