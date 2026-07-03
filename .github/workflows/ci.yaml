@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Check formatting
+        run: |
+          fmt_out="$(gofmt -l .)"
+          if [ -n "$fmt_out" ]; then
+            echo "gofmt needs to be run on:"
+            echo "$fmt_out"
+            exit 1
+          fi
+
+      - name: Verify generated manifests are up to date
+        run: |
+          make generate manifests helm-crds
+          git diff --exit-code -- api/v1alpha1/zz_generated.deepcopy.go config/crd config/rbac config/webhook charts/directory-rbac-operator/crds
+
+      - name: Test
+        run: make test
+
+  helm-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: azure/setup-helm@v4
+
+      - name: Lint chart
+        run: make helm-lint
+
+      - name: Render chart (default and strict values)
+        run: |
+          make helm-template
+          helm template directory-rbac-operator charts/directory-rbac-operator \
+            --set rbac.strict=true --set leaderElection.enabled=true > /dev/null

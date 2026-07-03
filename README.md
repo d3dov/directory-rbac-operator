@@ -188,22 +188,46 @@ docker compose down -v
   operator, but it's worth being aware of before granting the chart's
   ClusterRole in a security-sensitive cluster.
 
+## Observability
+
+- Metrics on the existing `/metrics` endpoint: `ldaprbac_sync_total` (by kind
+  and result), `ldaprbac_sync_duration_seconds`, `ldaprbac_ldap_errors_total`
+  (by provider), `ldaprbac_members_count` (by kind/namespace/name). The chart
+  can expose these via an optional `ServiceMonitor`
+  (`metrics.serviceMonitor.enabled`).
+- Kubernetes Events on every meaningful reconcile outcome - RoleBinding/
+  ClusterRoleBinding created/updated/recreated, sync failures, group-not-found,
+  invalid provider specs, blocked provider deletions - so `kubectl describe`
+  gives the same audit trail a security team would otherwise reconstruct from
+  logs.
+- LDAP requests are rate-limited per provider (shared across its health check
+  and every binding that references it), so a burst of reconciles - many
+  bindings against one directory, a rapid restart loop - can't hammer a
+  shared AD Global Catalog.
+
 ## Development
 
 ```sh
-make generate manifests   # regenerate deepcopy + CRD/RBAC YAML from markers
-make test                 # unit tests + envtest (spins up a real API server)
+make generate manifests  # regenerate deepcopy + CRD/RBAC YAML from markers
+make test                # unit tests + envtest (spins up a real API server)
 make helm-lint            # lint the chart (also syncs charts/.../crds/)
+./test/e2e/run.sh         # real kind + docker-compose OpenLDAP smoke test
+                          # (needs the cluster/image steps from the
+                          # quickstart above done first; see .github/
+                          # workflows/e2e.yaml for the full sequence)
 ```
 
 No `kubebuilder` CLI is required - `controller-gen`, `setup-envtest`, and
 friends are fetched on demand via `go run` and pinned by version in the
-Makefile.
+Makefile. CI (`.github/workflows/ci.yaml`) runs build/vet/fmt/generated-diff/
+unit+envtest and a Helm chart lint on every push and PR; `e2e.yaml` runs the
+same kind+OpenLDAP flow as the quickstart, including the outage and
+garbage-collection checks below.
 
 ## Status
 
-M1 (this repo, current): CRDs, both binding reconcilers, the LDAPProvider
-health check, LDAPS/StartTLS, Helm chart. M2 (planned): richer status
-conditions, Kubernetes Events, Prometheus metrics, LDAP rate limiting, wider
-test coverage, CI. M3 (planned, as time allows): recursive AD group
-membership, a validating webhook against duplicate group->role mappings.
+M1 + M2 (this repo, current): CRDs, both binding reconcilers, the
+LDAPProvider health check, LDAPS/StartTLS, Helm chart, status conditions,
+Kubernetes Events, Prometheus metrics, LDAP rate limiting, unit/envtest/E2E
+coverage, CI. M3 (planned, as time allows): recursive AD group membership, a
+validating webhook against duplicate group->role mappings.

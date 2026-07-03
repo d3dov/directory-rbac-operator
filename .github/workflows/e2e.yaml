@@ -1,0 +1,58 @@
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: azure/setup-helm@v4
+
+      - name: Install kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Start OpenLDAP and seed test data
+        run: |
+          docker compose up -d
+          make ldap-seed
+
+      - name: Create kind cluster
+        run: kind create cluster --name ldaprbac-e2e --wait 2m
+
+      - name: Connect kind to the OpenLDAP network
+        run: docker network connect directory-rbac-operator_default ldaprbac-e2e-control-plane
+
+      - name: Build and load the operator image
+        run: |
+          docker build -t directory-rbac-operator:e2e .
+          kind load docker-image directory-rbac-operator:e2e --name ldaprbac-e2e
+
+      - name: Run E2E checks
+        run: ./test/e2e/run.sh
+
+      - name: Operator logs (on failure)
+        if: failure()
+        run: kubectl -n ldaprbac-system logs deploy/ldaprbac --tail=200 || true
+
+      - name: Describe resources (on failure)
+        if: failure()
+        run: |
+          kubectl get ldapprovider,rbacgroupbinding,rolebinding -A -o yaml || true
+
+      - name: Tear down
+        if: always()
+        run: |
+          kind delete cluster --name ldaprbac-e2e || true
+          docker compose down -v || true
