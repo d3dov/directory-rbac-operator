@@ -49,6 +49,19 @@ metrics:
 healthProbe:
   bindAddress: ":8081"
 
+webhook:
+  # Enables the validating webhook that rejects a RBACGroupBinding or
+  # ClusterRBACGroupBinding whose (groupDN, role) pair duplicates another
+  # sibling binding's - see docs/wiki/Architecture.md. Requires cert-manager
+  # (https://cert-manager.io) to already be installed: enabling this also
+  # deploys a self-signed Issuer and Certificate so the webhook server has a
+  # TLS cert cert-manager keeps renewed, injected into the
+  # ValidatingWebhookConfiguration's caBundle via cert-manager's
+  # cert-manager.io/inject-ca-from annotation. Off by default so a plain
+  # install doesn't need cert-manager at all.
+  enabled: false
+  port: 9443
+
 # Passed through to controller-runtime's --zap-log-level flag. Use debug only
 # while diagnosing a reconcile or directory connectivity issue.
 logLevel: info

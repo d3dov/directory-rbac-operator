@@ -1,0 +1,77 @@
+{{- if .Values.webhook.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "directory-rbac-operator.fullname" . }}-selfsigned
+  labels:
+    {{- include "directory-rbac-operator.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "directory-rbac-operator.fullname" . }}-webhook-cert
+  labels:
+    {{- include "directory-rbac-operator.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "directory-rbac-operator.fullname" . }}-webhook-cert
+  dnsNames:
+    - {{ include "directory-rbac-operator.fullname" . }}-webhook.{{ .Release.Namespace }}.svc
+    - {{ include "directory-rbac-operator.fullname" . }}-webhook.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    name: {{ include "directory-rbac-operator.fullname" . }}-selfsigned
+    kind: Issuer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "directory-rbac-operator.fullname" . }}-webhook
+  labels:
+    {{- include "directory-rbac-operator.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "directory-rbac-operator.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: webhook
+      port: 443
+      targetPort: webhook
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "directory-rbac-operator.fullname" . }}-validating-webhook
+  labels:
+    {{- include "directory-rbac-operator.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "directory-rbac-operator.fullname" . }}-webhook-cert
+webhooks:
+  - name: vrbacgroupbinding.ldaprbac.io
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    clientConfig:
+      service:
+        name: {{ include "directory-rbac-operator.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-ldaprbac-io-v1alpha1-rbacgroupbinding
+    rules:
+      - apiGroups: ["ldaprbac.io"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["rbacgroupbindings"]
+  - name: vclusterrbacgroupbinding.ldaprbac.io
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    clientConfig:
+      service:
+        name: {{ include "directory-rbac-operator.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-ldaprbac-io-v1alpha1-clusterrbacgroupbinding
+    rules:
+      - apiGroups: ["ldaprbac.io"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["clusterrbacgroupbindings"]
+{{- end }}

@@ -189,6 +189,11 @@ docker compose down -v
   cluster-wide rule into a namespaced `Role` scoped to wherever
   `--secret-namespace` actually points, so a compromised operator pod can't
   read Secrets outside that one namespace.
+- An optional validating webhook (`webhook.enabled` Helm value, off by
+  default, requires cert-manager) rejects a `RBACGroupBinding` or
+  `ClusterRBACGroupBinding` that would duplicate another one's group-to-role
+  mapping in the same scope. See the Architecture wiki page for why this is
+  a webhook rather than a CRD schema rule.
 - **The operator's ServiceAccount needs `bind` on `roles`/`clusterroles`.**
   Kubernetes refuses to create a RoleBinding/ClusterRoleBinding that grants
   permissions the requester doesn't already hold, unless the requester also

@@ -17,8 +17,8 @@ THRESHOLDS=(
 	"internal/ldapclient/fake:100"
 	"internal/rbacsync:100"
 	"internal/metrics:100"
+	"internal/webhook:100"
 )
-# internal/webhook joins this list once it exists.
 
 status=0
 for entry in "${THRESHOLDS[@]}"; do

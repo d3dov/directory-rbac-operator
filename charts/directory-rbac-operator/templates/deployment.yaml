@@ -39,11 +39,18 @@ spec:
             {{- if .Values.leaderElection.enabled }}
             - --leader-elect
             {{- end }}
+            {{- if .Values.webhook.enabled }}
+            - --enable-validating-webhook
+            {{- end }}
           ports:
             - name: metrics
               containerPort: {{ (splitList ":" .Values.metrics.bindAddress) | last }}
             - name: healthz
               containerPort: {{ (splitList ":" .Values.healthProbe.bindAddress) | last }}
+            {{- if .Values.webhook.enabled }}
+            - name: webhook
+              containerPort: {{ .Values.webhook.port }}
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -58,6 +65,18 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.webhook.enabled }}
+          volumeMounts:
+            - name: webhook-cert
+              mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: true
+          {{- end }}
+      {{- if .Values.webhook.enabled }}
+      volumes:
+        - name: webhook-cert
+          secret:
+            secretName: {{ include "directory-rbac-operator.fullname" . }}-webhook-cert
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

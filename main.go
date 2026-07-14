@@ -7,6 +7,7 @@ import (
 	"flag"
 	"os"
 
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -19,6 +20,7 @@ import (
 	"github.com/d3dov/directory-rbac-operator/internal/controller"
 	"github.com/d3dov/directory-rbac-operator/internal/ldapclient"
 	"github.com/d3dov/directory-rbac-operator/internal/version"
+	"github.com/d3dov/directory-rbac-operator/internal/webhook"
 )
 
 var scheme = runtime.NewScheme()
@@ -36,6 +38,7 @@ func main() {
 	var probeAddr string
 	var enableLeaderElection bool
 	var secretNamespace string
+	var enableValidatingWebhook bool
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "Address the metrics endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "Address the health probe endpoint binds to.")
@@ -44,6 +47,11 @@ func main() {
 	flag.StringVar(&secretNamespace, "secret-namespace", "directory-rbac-operator-system",
 		"Namespace consulted for every LDAPProvider's bindPasswordSecretRef/tlsConfig.caSecretRef. "+
 			"LDAPProvider is cluster-scoped and so cannot carry a Secret namespace of its own.")
+	flag.BoolVar(&enableValidatingWebhook, "enable-validating-webhook", false,
+		"Serve the validating webhook that rejects a RBACGroupBinding/ClusterRBACGroupBinding duplicating "+
+			"another one's group-to-role mapping. Requires a TLS cert/key at the webhook server's cert dir "+
+			"(see the Helm chart's webhook.enabled value, which wires this up via cert-manager) and a matching "+
+			"ValidatingWebhookConfiguration; off by default so a plain install doesn't need either.")
 
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
@@ -106,6 +114,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	if enableValidatingWebhook {
+		setupWebhooks(mgr, setupLog)
+	}
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
@@ -118,6 +130,20 @@ func main() {
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
+		os.Exit(1)
+	}
+}
+
+// setupWebhooks registers the validating webhooks that reject a duplicate
+// group-to-role mapping. Exits the process on failure, matching every other
+// setup step in main.
+func setupWebhooks(mgr ctrl.Manager, setupLog logr.Logger) {
+	if err := (&webhook.RBACGroupBindingValidator{Client: mgr.GetClient()}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "RBACGroupBinding")
+		os.Exit(1)
+	}
+	if err := (&webhook.ClusterRBACGroupBindingValidator{Client: mgr.GetClient()}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "ClusterRBACGroupBinding")
 		os.Exit(1)
 	}
 }
