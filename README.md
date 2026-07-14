@@ -223,11 +223,3 @@ Makefile. CI (`.github/workflows/ci.yaml`) runs build/vet/fmt/generated-diff/
 unit+envtest and a Helm chart lint on every push and PR; `e2e.yaml` runs the
 same kind+OpenLDAP flow as the quickstart, including the outage and
 garbage-collection checks below.
-
-## Status
-
-M1 + M2 (this repo, current): CRDs, both binding reconcilers, the
-LDAPProvider health check, LDAPS/StartTLS, Helm chart, status conditions,
-Kubernetes Events, Prometheus metrics, LDAP rate limiting, unit/envtest/E2E
-coverage, CI. M3 (planned, as time allows): recursive AD group membership, a
-validating webhook against duplicate group->role mappings.
