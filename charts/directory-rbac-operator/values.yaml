@@ -49,6 +49,10 @@ metrics:
 healthProbe:
   bindAddress: ":8081"
 
+# Passed through to controller-runtime's --zap-log-level flag. Use debug only
+# while diagnosing a reconcile or directory connectivity issue.
+logLevel: info
+
 resources:
   limits:
     cpu: 200m
