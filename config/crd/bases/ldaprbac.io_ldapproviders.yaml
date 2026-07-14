@@ -57,13 +57,6 @@ spec:
               LDAPProviderSpec describes how to connect to and query an LDAP/AD
               directory.
             properties:
-              activeDirectory:
-                default: false
-                description: |-
-                  ActiveDirectory switches group-membership queries to AD's
-                  LDAP_MATCHING_RULE_IN_CHAIN so nested group membership resolves
-                  server-side.
-                type: boolean
               bindDN:
                 description: BindDN is the distinguished name the operator authenticates
                   as.
@@ -79,6 +72,19 @@ spec:
                 - key
                 - name
                 type: object
+              directoryType:
+                default: OpenLDAP
+                description: |-
+                  DirectoryType picks the directory backend and, with it, the
+                  backend-specific behavior described on the DirectoryType* constants.
+                  Rejecting anything outside the enum keeps that switch explicit: a
+                  typo'd or unsupported value fails validation instead of silently
+                  falling back to OpenLDAP behavior against a server that isn't OpenLDAP.
+                enum:
+                - OpenLDAP
+                - ActiveDirectory
+                - FreeIPA
+                type: string
               groupSearchBase:
                 description: GroupSearchBase is the base DN under which group entries
                   are searched.

@@ -21,6 +21,32 @@ type TLSConfig struct {
 	CASecretRef *SecretKeyRef `json:"caSecretRef,omitempty"`
 }
 
+// DirectoryType selects which directory backend a LDAPProvider talks to, so
+// backend-specific behavior (paged results, referral chasing, nested-group
+// resolution) is switched on an explicit, validated choice instead of being
+// inferred from other settings or guessed at from server responses.
+// +kubebuilder:validation:Enum=OpenLDAP;ActiveDirectory;FreeIPA
+type DirectoryType string
+
+const (
+	// DirectoryTypeOpenLDAP is the default: no AD-specific extended controls
+	// or matching rules are used. Nested-group membership is only as flat as
+	// the server's own memberOf overlay (or lack of one) makes it.
+	DirectoryTypeOpenLDAP DirectoryType = "OpenLDAP"
+
+	// DirectoryTypeActiveDirectory enables AD-specific behavior: RFC 2696
+	// paged results (AD caps unpaged searches at 1000 entries by default) and
+	// the LDAP_MATCHING_RULE_IN_CHAIN OID for server-side nested-group
+	// resolution.
+	DirectoryTypeActiveDirectory DirectoryType = "ActiveDirectory"
+
+	// DirectoryTypeFreeIPA targets a FreeIPA/389-ds server. 389-ds computes
+	// memberOf recursively itself (see the MemberOf plugin), so a group's
+	// memberOf-based membership is already flat; FreeIPA does not enable the
+	// AD matching-rule branch and needs no separate recursive-query logic.
+	DirectoryTypeFreeIPA DirectoryType = "FreeIPA"
+)
+
 // LDAPProviderSpec describes how to connect to and query an LDAP/AD
 // directory.
 type LDAPProviderSpec struct {
@@ -64,11 +90,13 @@ type LDAPProviderSpec struct {
 	// +kubebuilder:default="uid"
 	UsernameAttribute string `json:"usernameAttribute,omitempty"`
 
-	// ActiveDirectory switches group-membership queries to AD's
-	// LDAP_MATCHING_RULE_IN_CHAIN so nested group membership resolves
-	// server-side.
-	// +kubebuilder:default=false
-	ActiveDirectory bool `json:"activeDirectory,omitempty"`
+	// DirectoryType picks the directory backend and, with it, the
+	// backend-specific behavior described on the DirectoryType* constants.
+	// Rejecting anything outside the enum keeps that switch explicit: a
+	// typo'd or unsupported value fails validation instead of silently
+	// falling back to OpenLDAP behavior against a server that isn't OpenLDAP.
+	// +kubebuilder:default=OpenLDAP
+	DirectoryType DirectoryType `json:"directoryType,omitempty"`
 }
 
 // LDAPProviderStatus reports the last observed health of the directory
