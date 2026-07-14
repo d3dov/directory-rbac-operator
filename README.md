@@ -205,6 +205,14 @@ docker compose down -v
   bindings against one directory, a rapid restart loop - can't hammer a
   shared AD Global Catalog.
 
+## Releases
+
+Pushing a `vX.Y.Z` tag publishes a `linux/amd64` and `linux/arm64` image to
+GitHub Container Registry, packages the matching Helm chart to the GitHub OCI
+registry, and creates a GitHub Release with generated notes. Image signing
+with Cosign is intentionally not enabled yet; add keyless signing before
+using release artifacts in a supply-chain-enforced environment.
+
 ## Development
 
 ```sh
