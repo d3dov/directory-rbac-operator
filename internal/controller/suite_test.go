@@ -69,7 +69,7 @@ var _ = BeforeSuite(func() {
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		Grouper:         rbacGroupBindingGrouper,
-		Recorder:        mgr.GetEventRecorderFor("rbacgroupbinding-controller"),
+		Recorder:        mgr.GetEventRecorder("rbacgroupbinding-controller"),
 		SecretNamespace: testSecretNamespace,
 	}).SetupWithManager(mgr)).To(Succeed())
 
@@ -77,7 +77,7 @@ var _ = BeforeSuite(func() {
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		Grouper:         clusterRBACGroupBindingGrouper,
-		Recorder:        mgr.GetEventRecorderFor("clusterrbacgroupbinding-controller"),
+		Recorder:        mgr.GetEventRecorder("clusterrbacgroupbinding-controller"),
 		SecretNamespace: testSecretNamespace,
 	}).SetupWithManager(mgr)).To(Succeed())
 
@@ -85,7 +85,7 @@ var _ = BeforeSuite(func() {
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Pinger:   &stubPingerResolver{},
-		Recorder: mgr.GetEventRecorderFor("ldapprovider-controller"),
+		Recorder: mgr.GetEventRecorder("ldapprovider-controller"),
 	}).SetupWithManager(mgr)).To(Succeed())
 
 	go func() {

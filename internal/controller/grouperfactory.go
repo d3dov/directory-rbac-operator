@@ -51,10 +51,12 @@ var (
 	_ PingerResolver  = (*GrouperFactory)(nil)
 )
 
+// Grouper implements GrouperResolver.
 func (f *GrouperFactory) Grouper(ctx context.Context, provider *ldaprbacv1alpha1.LDAPProvider) (ldapclient.Grouper, error) {
 	return f.client(ctx, provider)
 }
 
+// Pinger implements PingerResolver.
 func (f *GrouperFactory) Pinger(ctx context.Context, provider *ldaprbacv1alpha1.LDAPProvider) (ldapclient.Pinger, error) {
 	return f.client(ctx, provider)
 }

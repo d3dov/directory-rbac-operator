@@ -113,7 +113,3 @@ type LDAPProviderList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []LDAPProvider `json:"items"`
 }
-
-func init() {
-	SchemeBuilder.Register(&LDAPProvider{}, &LDAPProviderList{})
-}

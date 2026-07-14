@@ -51,6 +51,7 @@ var (
 	_ Pinger  = (*Client)(nil)
 )
 
+// New returns a Client configured against a single LDAPProvider.
 func New(cfg Config) *Client {
 	return &Client{cfg: cfg}
 }
@@ -64,7 +65,7 @@ func (c *Client) Ping(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	conn.Close()
+	_ = conn.Close()
 	return nil
 }
 
@@ -85,18 +86,20 @@ func (c *Client) connectAndBind(ctx context.Context) (*ldap.Conn, error) {
 	}
 
 	if err := conn.Bind(c.cfg.BindDN, c.cfg.BindPassword); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("ldapclient: bind: %w", err)
 	}
 	return conn, nil
 }
 
+// GetGroupMembers resolves groupDN's membership, projected through
+// UsernameAttribute and sorted.
 func (c *Client) GetGroupMembers(ctx context.Context, groupDN string) ([]string, error) {
 	conn, err := c.connectAndBind(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	groupEntry, err := c.lookupGroup(conn, groupDN)
 	if err != nil {
@@ -127,7 +130,7 @@ func (c *Client) dial() (*ldap.Conn, error) {
 
 	if !isLDAPS && !c.cfg.InsecureSkipTLS {
 		if err := conn.StartTLS(c.tlsConfig()); err != nil {
-			conn.Close()
+			_ = conn.Close()
 			return nil, fmt.Errorf("starttls: %w", err)
 		}
 	}
@@ -191,7 +194,9 @@ func (c *Client) resolveMembers(conn *ldap.Conn, groupDN string, groupEntry *lda
 		return usernames(result.Entries, c.cfg.UsernameAttribute), nil
 	}
 
-	memberDNs := groupEntry.GetAttributeValues("member")
+	// memberDNs, not memberDNS: revive's initialism convention would read as
+	// the Domain Name System here, which isn't what this is.
+	memberDNs := groupEntry.GetAttributeValues("member") //nolint:revive // see comment above
 	if len(memberDNs) == 0 {
 		memberDNs = groupEntry.GetAttributeValues("uniqueMember")
 	}

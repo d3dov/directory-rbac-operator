@@ -15,8 +15,8 @@ const providerRefIndexField = ".spec.providerRef"
 
 // secretRefIndexField lets the Secret-rotation watch mappers find every
 // LDAPProvider that reads a given Secret (bind password or CA bundle) name,
-// without a linear scan.
-const secretRefIndexField = ".spec.secretRefs"
+// without a linear scan. This is a field-index name, not a credential value.
+const secretRefIndexField = ".spec.secretRefs" //nolint:gosec // false positive: index name, not a credential
 
 // SetupIndexers registers the field indexers shared by the binding
 // reconcilers. Call it once against the manager's cache before starting any
@@ -36,7 +36,7 @@ func SetupIndexers(ctx context.Context, mgr indexerManager) error {
 		return err
 	}
 
-	if err := mgr.GetFieldIndexer().IndexField(ctx, &ldaprbacv1alpha1.LDAPProvider{}, secretRefIndexField,
+	return mgr.GetFieldIndexer().IndexField(ctx, &ldaprbacv1alpha1.LDAPProvider{}, secretRefIndexField,
 		func(obj client.Object) []string {
 			p := obj.(*ldaprbacv1alpha1.LDAPProvider)
 			keys := []string{p.Spec.BindPasswordSecretRef.Name}
@@ -44,11 +44,7 @@ func SetupIndexers(ctx context.Context, mgr indexerManager) error {
 				keys = append(keys, p.Spec.TLSConfig.CASecretRef.Name)
 			}
 			return keys
-		}); err != nil {
-		return err
-	}
-
-	return nil
+		})
 }
 
 // indexerManager is the subset of ctrl.Manager SetupIndexers needs, so tests

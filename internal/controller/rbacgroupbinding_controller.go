@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -36,7 +36,7 @@ type RBACGroupBindingReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Grouper  GrouperResolver
-	Recorder record.EventRecorder
+	Recorder events.EventRecorder
 
 	// SecretNamespace scopes the Secret-rotation watch below to the same
 	// namespace GrouperFactory reads bind passwords/CA bundles from -
@@ -71,6 +71,15 @@ const (
 // time; see the README security notes for the trade-off this implies.
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;clusterroles,verbs=bind
 
+// Reconcile mirrors ClusterRBACGroupBindingReconciler.Reconcile closely
+// enough that dupl flags it; unifying the two via generics/interfaces would
+// trade a small amount of duplication for a layer of indirection between two
+// concrete, differently-scoped Kubernetes object types (RoleBinding vs
+// ClusterRoleBinding, namespaced vs cluster CRs) - not a clear improvement,
+// and kubebuilder itself scaffolds separate reconcilers for exactly this
+// kind of pair.
+//
+//nolint:dupl // see comment above
 func (r *RBACGroupBindingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	start := time.Now()
 	defer func() {
@@ -119,12 +128,14 @@ func (r *RBACGroupBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	switch outcome {
+	case syncUnchanged:
+		// nothing changed; no event to record.
 	case syncCreated:
-		r.Recorder.Eventf(&binding, corev1.EventTypeNormal, "RoleBindingCreated", "created RoleBinding %s with %d member(s)", desired.Name, len(members))
+		recordSuccessf(r.Recorder, &binding, "RoleBindingCreated", "created RoleBinding %s with %d member(s)", desired.Name, len(members))
 	case syncUpdated:
-		r.Recorder.Eventf(&binding, corev1.EventTypeNormal, "RoleBindingUpdated", "updated RoleBinding %s to %d member(s)", desired.Name, len(members))
+		recordSuccessf(r.Recorder, &binding, "RoleBindingUpdated", "updated RoleBinding %s to %d member(s)", desired.Name, len(members))
 	case syncRecreated:
-		r.Recorder.Eventf(&binding, corev1.EventTypeNormal, "RoleBindingRecreated", "recreated RoleBinding %s (roleRef changed)", desired.Name)
+		recordSuccessf(r.Recorder, &binding, "RoleBindingRecreated", "recreated RoleBinding %s (roleRef changed)", desired.Name)
 	}
 
 	log.Info("synced group membership", "members", len(members))
@@ -180,7 +191,7 @@ func (r *RBACGroupBindingReconciler) markReady(ctx context.Context, binding *lda
 	binding.Status.ObservedGeneration = binding.Generation
 	now := metav1.Now()
 	binding.Status.LastSyncTime = &now
-	binding.Status.MemberCount = int32(len(members))
+	binding.Status.MemberCount = rbacsync.MemberCount(members)
 	binding.Status.MembersPreview = preview
 	binding.Status.MembersTruncated = truncated
 	binding.Status.MembersHash = rbacsync.MembersHash(members)
@@ -213,9 +224,15 @@ func (r *RBACGroupBindingReconciler) markReady(ctx context.Context, binding *lda
 // directory or transient error never removes existing access, it only
 // surfaces as a status condition. The error is returned so the workqueue's
 // default exponential-backoff rate limiter governs the retry, rather than a
-// hand-rolled backoff here.
+// hand-rolled backoff here. Its ctrl.Result is always the zero value,
+// deliberately mirroring Reconcile's return shape so callers can `return
+// r.markDegraded(...)` directly. It and markGroupNotFound below mirror
+// ClusterRBACGroupBindingReconciler's; see the Reconcile comment above for
+// why that's left as-is rather than unified.
+//
+//nolint:dupl,unparam // see comment above
 func (r *RBACGroupBindingReconciler) markDegraded(ctx context.Context, binding *ldaprbacv1alpha1.RBACGroupBinding, cause error) (ctrl.Result, error) {
-	r.Recorder.Event(binding, corev1.EventTypeWarning, "SyncFailed", cause.Error())
+	recordWarning(r.Recorder, binding, "SyncFailed", cause.Error())
 	metrics.SyncTotal.WithLabelValues(rbacGroupBindingKind, "degraded").Inc()
 	metrics.LDAPErrorsTotal.WithLabelValues(binding.Spec.ProviderRef).Inc()
 
@@ -246,7 +263,7 @@ func (r *RBACGroupBindingReconciler) markDegraded(ctx context.Context, binding *
 // group DN reappear, while periodic re-checks recover automatically if it
 // does.
 func (r *RBACGroupBindingReconciler) markGroupNotFound(ctx context.Context, binding *ldaprbacv1alpha1.RBACGroupBinding, interval time.Duration) (ctrl.Result, error) {
-	r.Recorder.Event(binding, corev1.EventTypeWarning, "GroupNotFound", "groupDN not found in directory")
+	recordWarning(r.Recorder, binding, "GroupNotFound", "groupDN not found in directory")
 	metrics.SyncTotal.WithLabelValues(rbacGroupBindingKind, "group_not_found").Inc()
 
 	binding.Status.ObservedGeneration = binding.Generation
@@ -270,6 +287,8 @@ func (r *RBACGroupBindingReconciler) markGroupNotFound(ctx context.Context, bind
 	return ctrl.Result{RequeueAfter: interval}, nil
 }
 
+// SetupWithManager wires the reconciler into mgr, including the provider-
+// and Secret-change watches described above.
 func (r *RBACGroupBindingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ldaprbacv1alpha1.RBACGroupBinding{}).

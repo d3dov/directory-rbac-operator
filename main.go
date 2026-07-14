@@ -1,3 +1,5 @@
+// Command directory-rbac-operator runs the controller manager: the
+// RBACGroupBinding, ClusterRBACGroupBinding and LDAPProvider reconcilers.
 package main
 
 import (
@@ -75,7 +77,7 @@ func main() {
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		Grouper:         grouperFactory,
-		Recorder:        mgr.GetEventRecorderFor("rbacgroupbinding-controller"),
+		Recorder:        mgr.GetEventRecorder("rbacgroupbinding-controller"),
 		SecretNamespace: secretNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RBACGroupBinding")
@@ -86,7 +88,7 @@ func main() {
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		Grouper:         grouperFactory,
-		Recorder:        mgr.GetEventRecorderFor("clusterrbacgroupbinding-controller"),
+		Recorder:        mgr.GetEventRecorder("clusterrbacgroupbinding-controller"),
 		SecretNamespace: secretNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ClusterRBACGroupBinding")
@@ -97,7 +99,7 @@ func main() {
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Pinger:   grouperFactory,
-		Recorder: mgr.GetEventRecorderFor("ldapprovider-controller"),
+		Recorder: mgr.GetEventRecorder("ldapprovider-controller"),
 		Limiters: limiters,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "LDAPProvider")

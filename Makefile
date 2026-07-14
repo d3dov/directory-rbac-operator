@@ -8,6 +8,15 @@ $(LOCALBIN):
 CONTROLLER_TOOLS_VERSION ?= v0.21.0
 ENVTEST_VERSION ?= v0.24.1
 ENVTEST_K8S_VERSION ?= 1.33.0
+GOLANGCI_LINT_VERSION ?= v2.12.2
+
+.PHONY: lint
+lint:
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run
+
+.PHONY: lint-fix
+lint-fix:
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run --fix
 
 .PHONY: envtest
 envtest: $(LOCALBIN) ## Ensure the envtest binaries (etcd, kube-apiserver, kubectl) are present.

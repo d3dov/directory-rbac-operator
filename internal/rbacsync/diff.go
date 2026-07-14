@@ -3,6 +3,7 @@ package rbacsync
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"math"
 	"sort"
 	"strings"
 
@@ -63,4 +64,14 @@ func PreviewMembers(members []string) (preview []string, truncated bool) {
 func MembersHash(members []string) string {
 	sum := sha256.Sum256([]byte(strings.Join(members, "\n")))
 	return hex.EncodeToString(sum[:])
+}
+
+// MemberCount converts a member count into the CRD status field's int32,
+// clamping rather than wrapping in the (never realistically reachable, but
+// structurally possible) case of a group with more than MaxInt32 members.
+func MemberCount(members []string) int32 {
+	if len(members) > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(len(members)) //nolint:gosec // guarded by the bounds check above
 }

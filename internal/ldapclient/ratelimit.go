@@ -11,7 +11,7 @@ import (
 // and this operator is rarely the only thing querying one.
 const (
 	DefaultRate  rate.Limit = 5
-	DefaultBurst            = 10
+	DefaultBurst int        = 10
 )
 
 // Limiters is a keyed registry of rate limiters, one per LDAPProvider, so

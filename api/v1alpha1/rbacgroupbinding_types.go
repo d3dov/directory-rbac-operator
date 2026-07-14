@@ -92,7 +92,3 @@ type RBACGroupBindingList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []RBACGroupBinding `json:"items"`
 }
-
-func init() {
-	SchemeBuilder.Register(&RBACGroupBinding{}, &RBACGroupBindingList{})
-}

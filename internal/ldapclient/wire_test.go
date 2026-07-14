@@ -42,7 +42,7 @@ func startTestServer(t *testing.T, routes *ldapserver.RouteMux) string {
 		t.Fatalf("reserve a port: %v", err)
 	}
 	addr := probe.Addr().String()
-	probe.Close()
+	_ = probe.Close()
 
 	server := ldapserver.NewServer()
 	server.Handle(routes)
@@ -62,7 +62,7 @@ func waitForListener(t *testing.T, addr string) {
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -70,6 +70,11 @@ func waitForListener(t *testing.T, addr string) {
 	t.Fatalf("server at %s never became reachable", addr)
 }
 
+// simpleBindHandler is a reusable test fixture: dn/password are parameters
+// (even though every current test happens to pass testBindDN) so future
+// tests can exercise a mismatched-DN bind failure without a new handler.
+//
+//nolint:unparam // see comment above
 func simpleBindHandler(dn, password string) ldapserver.HandlerFunc {
 	return func(w ldapserver.ResponseWriter, m *ldapserver.Message) {
 		r := m.GetBindRequest()
@@ -110,7 +115,7 @@ func TestClientPingFailsOnInvalidBindWithoutErrGroupNotFound(t *testing.T) {
 func TestClientGetGroupMembersReturnsErrGroupNotFound(t *testing.T) {
 	routes := ldapserver.NewRouteMux()
 	routes.Bind(simpleBindHandler(testBindDN, testBindPassword))
-	routes.Search(func(w ldapserver.ResponseWriter, m *ldapserver.Message) {
+	routes.Search(func(w ldapserver.ResponseWriter, _ *ldapserver.Message) {
 		w.Write(ldapserver.NewSearchResultDoneResponse(ldapserver.LDAPResultNoSuchObject))
 	})
 	addr := startTestServer(t, routes)

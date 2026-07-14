@@ -6,11 +6,10 @@ import (
 	"strings"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -42,7 +41,7 @@ type LDAPProviderReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Pinger   PingerResolver
-	Recorder record.EventRecorder
+	Recorder events.EventRecorder
 
 	// Limiters is the same registry GrouperFactory draws rate limiters from;
 	// finalize() deletes a provider's entry once it's actually gone, so a
@@ -55,6 +54,8 @@ type LDAPProviderReconciler struct {
 // +kubebuilder:rbac:groups=ldaprbac.io,resources=ldapproviders/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ldaprbac.io,resources=ldapproviders/finalizers,verbs=update
 
+// Reconcile runs the bind-only health check described on
+// LDAPProviderReconciler, and handles the in-use-protection finalizer.
 func (r *LDAPProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	start := time.Now()
 	defer func() {
@@ -132,7 +133,7 @@ func (r *LDAPProviderReconciler) finalize(ctx context.Context, provider *ldaprba
 	}
 	if inUse {
 		logf.FromContext(ctx).Info("deletion blocked: bindings still reference this provider")
-		r.Recorder.Event(provider, corev1.EventTypeWarning, "DeletionBlocked", "bindings still reference this provider")
+		recordWarning(r.Recorder, provider, "DeletionBlocked", "bindings still reference this provider")
 		return ctrl.Result{RequeueAfter: inUseRecheckInterval}, nil
 	}
 
@@ -182,8 +183,14 @@ func (r *LDAPProviderReconciler) markReady(ctx context.Context, provider *ldaprb
 	return ctrl.Result{RequeueAfter: provider.Spec.SyncInterval.Duration}, nil
 }
 
+// markDegraded's ctrl.Result is always the zero value: it deliberately
+// mirrors Reconcile's return shape so call sites can `return
+// r.markDegraded(...)` directly, rather than returning just an error and
+// making every caller wrap it back into a ctrl.Result.
+//
+//nolint:unparam // see comment above
 func (r *LDAPProviderReconciler) markDegraded(ctx context.Context, provider *ldaprbacv1alpha1.LDAPProvider, cause error) (ctrl.Result, error) {
-	r.Recorder.Event(provider, corev1.EventTypeWarning, "BindFailed", cause.Error())
+	recordWarning(r.Recorder, provider, "BindFailed", cause.Error())
 	metrics.SyncTotal.WithLabelValues(ldapProviderKind, "degraded").Inc()
 	metrics.LDAPErrorsTotal.WithLabelValues(provider.Name).Inc()
 
@@ -205,9 +212,12 @@ func (r *LDAPProviderReconciler) markDegraded(ctx context.Context, provider *lda
 }
 
 // markInvalidSpec doesn't requeue: nothing will change until the user edits
-// the spec, and that edit itself triggers a new reconcile.
+// the spec, and that edit itself triggers a new reconcile. Its ctrl.Result is
+// always the zero value, for the same reason markDegraded's is.
+//
+//nolint:unparam // see markDegraded
 func (r *LDAPProviderReconciler) markInvalidSpec(ctx context.Context, provider *ldaprbacv1alpha1.LDAPProvider, cause error) (ctrl.Result, error) {
-	r.Recorder.Event(provider, corev1.EventTypeWarning, "InvalidSpec", cause.Error())
+	recordWarning(r.Recorder, provider, "InvalidSpec", cause.Error())
 	metrics.SyncTotal.WithLabelValues(ldapProviderKind, "invalid_spec").Inc()
 
 	provider.Status.ObservedGeneration = provider.Generation
@@ -220,6 +230,7 @@ func (r *LDAPProviderReconciler) markInvalidSpec(ctx context.Context, provider *
 	return ctrl.Result{}, r.Status().Update(ctx, provider)
 }
 
+// SetupWithManager wires the reconciler into mgr.
 func (r *LDAPProviderReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ldaprbacv1alpha1.LDAPProvider{}).

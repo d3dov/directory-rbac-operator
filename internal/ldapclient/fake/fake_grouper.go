@@ -17,6 +17,8 @@ type Grouper struct {
 
 var _ ldapclient.Grouper = (*Grouper)(nil)
 
+// GetGroupMembers returns the members registered for groupDN in Groups, or
+// ldapclient.ErrGroupNotFound if it has no entry.
 func (g *Grouper) GetGroupMembers(_ context.Context, groupDN string) ([]string, error) {
 	members, ok := g.Groups[groupDN]
 	if !ok {

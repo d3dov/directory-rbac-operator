@@ -372,7 +372,7 @@ var _ = Describe("RBACGroupBindingReconciler", func() {
 	})
 
 	It("re-reconciles a binding when its LDAPProvider's bind Secret is rotated, without waiting for syncInterval", func() {
-		const secretName = "ldap-bind-rotation"
+		const secretName = "ldap-bind-rotation" //nolint:gosec // false positive: a Secret's object name, not a credential value
 		const rotationProvider = "corp-ad-rotation"
 		const rotationBinding = "data-team-rotation"
 

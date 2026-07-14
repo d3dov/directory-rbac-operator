@@ -1,0 +1,87 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - ineffassign
+    - unused
+    - revive
+    - gocritic
+    - bodyclose
+    - gosec
+    - unparam
+    - unconvert
+    - misspell
+    - whitespace
+    - depguard
+    - exhaustive
+    - dupl
+    - funlen
+  settings:
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: unused-parameter
+        - name: blank-imports
+        - name: context-as-argument
+        - name: dot-imports
+        - name: error-naming
+        - name: error-strings
+        - name: errorf
+        - name: if-return
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: var-declaration
+        - name: var-naming
+    exhaustive:
+      default-signifies-exhaustive: false
+    depguard:
+      rules:
+        main:
+          files:
+            - "$all"
+          deny:
+            - pkg: io/ioutil
+              desc: deprecated - use io or os instead
+    funlen:
+      lines: 100
+      statements: 60
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - dupl
+          - funlen
+      - path: _test\.go
+        linters:
+          - revive
+        text: dot-imports
+        # Ginkgo/Gomega's own docs recommend dot-importing both; that's the
+        # idiomatic way these test suites are written, not a style slip.
+      - path: zz_generated\.deepcopy\.go
+        linters:
+          - all
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    paths:
+      - zz_generated\.deepcopy\.go
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
