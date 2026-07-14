@@ -11,6 +11,7 @@ import (
 	"errors"
 	"math/big"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,6 +123,66 @@ func TestClientPingFailsOnInvalidBindWithoutErrGroupNotFound(t *testing.T) {
 	}
 	if errors.Is(err, ErrGroupNotFound) {
 		t.Fatalf("a bind failure must never be classified as ErrGroupNotFound: %v", err)
+	}
+}
+
+func TestClientPingRespectsContextDeadline(t *testing.T) {
+	routes := ldapserver.NewRouteMux()
+	routes.Bind(simpleBindHandler(testBindDN, testBindPassword))
+	addr := startTestServer(t, routes)
+
+	c := New(Config{URL: "ldap://" + addr, BindDN: testBindDN, BindPassword: testBindPassword, InsecureSkipTLS: true})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// A ctx with a deadline routes through conn.SetTimeout(...) rather than
+	// leaving the connection with no deadline at all; this asserts that path
+	// doesn't itself break a bind that should otherwise succeed comfortably
+	// within the deadline.
+	if err := c.Ping(ctx); err != nil {
+		t.Fatalf("Ping() with a live deadline = %v, want nil", err)
+	}
+}
+
+func TestClientDialFailsForUnreachableAddress(t *testing.T) {
+	// Nothing listens here; this exercises both dial()'s ldaps:// branch
+	// (building TLS DialOpts before the connection attempt) and its
+	// DialURL error path, without needing a real TLS listener.
+	c := New(Config{URL: "ldaps://127.0.0.1:1", BindDN: testBindDN, BindPassword: testBindPassword})
+
+	if err := c.Ping(context.Background()); err == nil {
+		t.Fatal("Ping() against an unreachable address = nil, want an error")
+	}
+}
+
+func TestClientGetGroupMembersWrapsReverseQueryError(t *testing.T) {
+	const groupDN = "cn=data-team,ou=groups,dc=corp,dc=local"
+
+	routes := ldapserver.NewRouteMux()
+	routes.Bind(simpleBindHandler(testBindDN, testBindPassword))
+	routes.Search(func(w ldapserver.ResponseWriter, m *ldapserver.Message) {
+		r := m.GetSearchRequest()
+		if int(r.Scope()) == ldap.ScopeBaseObject && string(r.BaseObject()) == groupDN {
+			w.Write(ldapserver.NewSearchResultEntry(groupDN))
+			w.Write(ldapserver.NewSearchResultDoneResponse(ldapserver.LDAPResultSuccess))
+			return
+		}
+		w.Write(ldapserver.NewSearchResultDoneResponse(ldapserver.LDAPResultOperationsError))
+	})
+	addr := startTestServer(t, routes)
+
+	c := New(Config{
+		URL: "ldap://" + addr, BindDN: testBindDN, BindPassword: testBindPassword, InsecureSkipTLS: true,
+		UserSearchBase: "ou=people,dc=corp,dc=local", UsernameAttribute: "uid",
+	})
+
+	_, err := c.GetGroupMembers(context.Background(), groupDN)
+	if err == nil {
+		t.Fatal("GetGroupMembers() error = nil, want the reverse query's failure to propagate")
+	}
+	if !strings.Contains(err.Error(), "resolve members for") {
+		t.Fatalf("GetGroupMembers() error = %q, want it wrapped with resolve-members context", err.Error())
 	}
 }
 
