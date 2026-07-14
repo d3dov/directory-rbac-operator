@@ -31,6 +31,17 @@ case "$E2E_BACKEND" in
 		LDAP_GROUP_DN="CN=data-team,CN=Users,DC=corp,DC=local"
 		LDAP_DIRECTORY_TYPE=ActiveDirectory
 		;;
+	freeipa)
+		LDAP_CONTAINER=ldaprbac-freeipa
+		LDAP_BIND_DN="uid=admin,cn=users,cn=accounts,dc=corp,dc=local"
+		LDAP_PASSWORD=Passw0rd!123
+		LDAP_USER_SEARCH_BASE="cn=users,cn=accounts,dc=corp,dc=local"
+		LDAP_GROUP_SEARCH_BASE="cn=groups,cn=accounts,dc=corp,dc=local"
+		LDAP_USERNAME_ATTRIBUTE=uid
+		LDAP_GROUP_DN="cn=data-team,cn=groups,cn=accounts,dc=corp,dc=local"
+		LDAP_DIRECTORY_TYPE=FreeIPA
+		E2E_WAIT_TIMEOUT=180
+		;;
 	*)
 		echo "unsupported E2E_BACKEND: $E2E_BACKEND" >&2
 		exit 2
@@ -38,7 +49,7 @@ case "$E2E_BACKEND" in
 esac
 
 wait_for() {
-	local desc="$1" cmd="$2" timeout="${3:-90}" waited=0
+	local desc="$1" cmd="$2" timeout="${3:-${E2E_WAIT_TIMEOUT:-90}}" waited=0
 	until eval "$cmd" >/dev/null 2>&1; do
 		waited=$((waited + 3))
 		if [ "$waited" -ge "$timeout" ]; then
@@ -120,9 +131,11 @@ changetype: modify
 add: member
 member: uid=carol,ou=people,dc=corp,dc=local
 EOF
-	else
+	elif [ "$E2E_BACKEND" = samba-ad ]; then
 		docker exec "$LDAP_CONTAINER" samba-tool group addmembers data-team carol
-fi
+	else
+		docker exec "$LDAP_CONTAINER" ipa group-add-member data-team --users=carol
+	fi
 
 wait_for "RBACGroupBinding picks up carol" \
 	"[ \"\$(kubectl -n $NAMESPACE get rbacgroupbinding data-team-edit -o jsonpath='{.status.memberCount}')\" = '3' ]"

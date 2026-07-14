@@ -8,10 +8,19 @@ on:
 jobs:
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
       matrix:
-        backend: [openldap, samba-ad]
+        include:
+          - backend: openldap
+            timeout_minutes: 20
+          - backend: samba-ad
+            timeout_minutes: 25
+          - backend: freeipa
+            # FreeIPA configures a full IPA stack on first boot; allow its
+            # Directory Server ample time without slowing other backends.
+            timeout_minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -32,7 +41,7 @@ jobs:
           if [ "${{ matrix.backend }}" = openldap ]; then
             docker compose up -d
             make ldap-seed
-          else
+          elif [ "${{ matrix.backend }}" = samba-ad ]; then
             # GitHub-hosted runners cannot license or run a real Microsoft AD
             # server. Samba AD DC implements the AD LDAP controls exercised by
             # this suite, including LDAP_MATCHING_RULE_IN_CHAIN and paging.
@@ -46,6 +55,25 @@ jobs:
             docker exec ldaprbac-samba-ad samba-tool user create carol 'Passw0rd!123'
             docker exec ldaprbac-samba-ad samba-tool group add data-team
             docker exec ldaprbac-samba-ad samba-tool group addmembers data-team alice,bob
+          else
+            docker volume create ldaprbac-freeipa-data
+            docker run -d --name ldaprbac-freeipa --hostname ipa.corp.local --read-only \
+              --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+              -v ldaprbac-freeipa-data:/data -e PASSWORD='Passw0rd!123' \
+              -e IPA_SERVER_IP=no-update freeipa/freeipa-server:rocky-9-4.13.1 \
+              ipa-server-install -U -r CORP.LOCAL -n corp.local --no-ntp --skip-mem-check
+            # Do not use the container's generic "running" state: it can be
+            # true while IPA is still configuring. The operator depends on
+            # 389 Directory Server, so wait for that service specifically.
+            until docker exec ldaprbac-freeipa systemctl is-active dirsrv@CORP-LOCAL.service | grep -qx active; do
+              sleep 10
+            done
+            docker exec -i ldaprbac-freeipa kinit admin <<<'Passw0rd!123'
+            docker exec ldaprbac-freeipa ipa user-add alice --first=Alice --last=Example
+            docker exec ldaprbac-freeipa ipa user-add bob --first=Bob --last=Example
+            docker exec ldaprbac-freeipa ipa user-add carol --first=Carol --last=Example
+            docker exec ldaprbac-freeipa ipa group-add data-team
+            docker exec ldaprbac-freeipa ipa group-add-member data-team --users=alice,bob
           fi
 
       - name: Create kind cluster
@@ -82,3 +110,5 @@ jobs:
           kind delete cluster --name ldaprbac-e2e || true
           docker compose down -v || true
           docker rm -f ldaprbac-samba-ad || true
+          docker rm -f ldaprbac-freeipa || true
+          docker volume rm ldaprbac-freeipa-data || true
