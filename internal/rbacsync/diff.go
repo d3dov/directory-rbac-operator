@@ -70,8 +70,12 @@ func MembersHash(members []string) string {
 // clamping rather than wrapping in the (never realistically reachable, but
 // structurally possible) case of a group with more than MaxInt32 members.
 func MemberCount(members []string) int32 {
-	if len(members) > math.MaxInt32 {
+	return memberCount(len(members))
+}
+
+func memberCount(count int) int32 {
+	if count > math.MaxInt32 {
 		return math.MaxInt32
 	}
-	return int32(len(members)) //nolint:gosec // guarded by the bounds check above
+	return int32(count) //nolint:gosec // guarded by the bounds check above
 }

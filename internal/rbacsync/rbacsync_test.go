@@ -1,6 +1,7 @@
 package rbacsync
 
 import (
+	"math"
 	"testing"
 
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -40,6 +41,28 @@ func TestSubjectsEqualDetectsDifference(t *testing.T) {
 
 	if SubjectsEqual(a, b) {
 		t.Fatalf("expected subjects to differ: %v vs %v", a, b)
+	}
+}
+
+func TestSubjectsEqualDetectsLengthDifference(t *testing.T) {
+	if SubjectsEqual(Subjects([]string{"alice"}), Subjects([]string{"alice", "bob"})) {
+		t.Fatal("expected subjects of different lengths to differ")
+	}
+}
+
+func TestSubjectsEqualSortsAllSubjectFields(t *testing.T) {
+	a := []rbacv1.Subject{
+		{Kind: rbacv1.GroupKind, Name: "admins"},
+		{Kind: rbacv1.UserKind, Namespace: "b", Name: "alice"},
+		{Kind: rbacv1.UserKind, Namespace: "a", Name: "bob"},
+	}
+	b := []rbacv1.Subject{
+		{Kind: rbacv1.UserKind, Namespace: "a", Name: "bob"},
+		{Kind: rbacv1.UserKind, Namespace: "b", Name: "alice"},
+		{Kind: rbacv1.GroupKind, Name: "admins"},
+	}
+	if !SubjectsEqual(a, b) {
+		t.Fatalf("expected subjects to compare equal: %v vs %v", a, b)
 	}
 }
 
@@ -101,5 +124,29 @@ func TestBuildRoleBinding(t *testing.T) {
 	}
 	if len(rb.Subjects) != 1 || rb.Subjects[0].Name != "alice" {
 		t.Fatalf("unexpected Subjects: %+v", rb.Subjects)
+	}
+}
+
+func TestBuildClusterRoleBinding(t *testing.T) {
+	binding := &ldaprbacv1alpha1.ClusterRBACGroupBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-admins"},
+		Spec:       ldaprbacv1alpha1.ClusterRBACGroupBindingSpec{ClusterRoleRef: "cluster-admin"},
+	}
+
+	got := BuildClusterRoleBinding(binding, []string{"alice"})
+	if got.Name != binding.Name || got.RoleRef.Kind != "ClusterRole" || got.RoleRef.Name != "cluster-admin" {
+		t.Fatalf("unexpected ClusterRoleBinding: %+v", got)
+	}
+	if len(got.Subjects) != 1 || got.Subjects[0].Name != "alice" {
+		t.Fatalf("unexpected subjects: %+v", got.Subjects)
+	}
+}
+
+func TestMemberCount(t *testing.T) {
+	if got := MemberCount([]string{"alice", "bob"}); got != 2 {
+		t.Fatalf("MemberCount() = %d, want 2", got)
+	}
+	if got := memberCount(math.MaxInt32 + 1); got != math.MaxInt32 {
+		t.Fatalf("memberCount() = %d, want MaxInt32", got)
 	}
 }
