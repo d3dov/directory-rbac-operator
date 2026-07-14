@@ -1,0 +1,24 @@
+name: Feature request
+description: Suggest an enhancement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What are you trying to do that the operator doesn't support today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: >
+        If you have one in mind - a CRD field, a new condition/metric, a
+        CLI flag, etc.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

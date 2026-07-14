@@ -1,0 +1,58 @@
+name: Bug report
+description: Something isn't working as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: >
+        CRs involved (redact real DNs/hostnames if needed), and the exact
+        steps or commands that trigger the issue.
+      render: yaml
+    validations:
+      required: true
+
+  - type: textarea
+    id: status
+    attributes:
+      label: Relevant status/logs
+      description: >
+        `kubectl get ldapprovider,rbacgroupbinding,clusterrbacgroupbinding -A -o wide`,
+        `kubectl describe` output, and/or operator logs
+        (`kubectl -n <namespace> logs deploy/<release>`).
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: Operator version / image tag
+    validations:
+      required: true
+
+  - type: dropdown
+    id: directory
+    attributes:
+      label: Directory backend
+      options:
+        - OpenLDAP
+        - Active Directory
+        - FreeIPA
+        - Other/unsure
+    validations:
+      required: true
+
+  - type: input
+    id: k8s-version
+    attributes:
+      label: Kubernetes version
+    validations:
+      required: true
