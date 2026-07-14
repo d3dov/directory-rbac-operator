@@ -15,6 +15,14 @@ func TestMembershipFilterUsesMatchingRuleOnlyForActiveDirectory(t *testing.T) {
 		{"zero value defaults like OpenLDAP", "", wantPlain},
 		{"OpenLDAP", DirectoryTypeOpenLDAP, wantPlain},
 		{"ActiveDirectory", DirectoryTypeActiveDirectory, wantMatchingRule},
+		// FreeIPA gets the plain filter too, not by falling through a
+		// catch-all default but as an explicit case: 389-ds's MemberOf
+		// plugin computes memberOf recursively server-side, so a plain
+		// equality filter already sees flattened nested-group membership
+		// there. Applying the AD matching rule against it would either be
+		// rejected (FreeIPA doesn't index that matching rule) or, at best,
+		// be redundant with what the server already did.
+		{"FreeIPA", DirectoryTypeFreeIPA, wantPlain},
 	}
 
 	for _, tt := range tests {
