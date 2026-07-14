@@ -8,6 +8,10 @@ on:
 jobs:
   e2e:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [openldap, samba-ad]
     steps:
       - uses: actions/checkout@v4
 
@@ -23,16 +27,37 @@ jobs:
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
-      - name: Start OpenLDAP and seed test data
+      - name: Start LDAP backend and seed test data
         run: |
-          docker compose up -d
-          make ldap-seed
+          if [ "${{ matrix.backend }}" = openldap ]; then
+            docker compose up -d
+            make ldap-seed
+          else
+            # GitHub-hosted runners cannot license or run a real Microsoft AD
+            # server. Samba AD DC implements the AD LDAP controls exercised by
+            # this suite, including LDAP_MATCHING_RULE_IN_CHAIN and paging.
+            docker run -d --privileged --name ldaprbac-samba-ad --hostname dc1 \
+              -e REALM=CORP.LOCAL -e DOMAIN=CORP -e ADMIN_PASS='Passw0rd!123' \
+              -e DNS_FORWARDER=8.8.8.8 -e BIND_NETWORK_INTERFACES=false \
+              diegogslomp/samba-ad-dc
+            until docker exec ldaprbac-samba-ad samba-tool domain info 127.0.0.1 >/dev/null 2>&1; do sleep 5; done
+            docker exec ldaprbac-samba-ad samba-tool user create alice 'Passw0rd!123'
+            docker exec ldaprbac-samba-ad samba-tool user create bob 'Passw0rd!123'
+            docker exec ldaprbac-samba-ad samba-tool user create carol 'Passw0rd!123'
+            docker exec ldaprbac-samba-ad samba-tool group add data-team
+            docker exec ldaprbac-samba-ad samba-tool group addmembers data-team alice,bob
+          fi
 
       - name: Create kind cluster
         run: kind create cluster --name ldaprbac-e2e --wait 2m
 
-      - name: Connect kind to the OpenLDAP network
-        run: docker network connect directory-rbac-operator_default ldaprbac-e2e-control-plane
+      - name: Connect kind to the LDAP backend network
+        run: |
+          if [ "${{ matrix.backend }}" = openldap ]; then
+            docker network connect directory-rbac-operator_default ldaprbac-e2e-control-plane
+          else
+            docker network connect bridge ldaprbac-e2e-control-plane
+          fi
 
       - name: Build and load the operator image
         run: |
@@ -40,7 +65,7 @@ jobs:
           kind load docker-image directory-rbac-operator:e2e --name ldaprbac-e2e
 
       - name: Run E2E checks
-        run: ./test/e2e/run.sh
+        run: E2E_BACKEND="${{ matrix.backend }}" ./test/e2e/run.sh
 
       - name: Operator logs (on failure)
         if: failure()
@@ -56,3 +81,4 @@ jobs:
         run: |
           kind delete cluster --name ldaprbac-e2e || true
           docker compose down -v || true
+          docker rm -f ldaprbac-samba-ad || true
