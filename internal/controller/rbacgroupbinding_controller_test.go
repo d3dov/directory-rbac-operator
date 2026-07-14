@@ -141,6 +141,69 @@ var _ = Describe("RBACGroupBindingReconciler", func() {
 		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "no RoleBinding should be created for an unresolved group")
 	})
 
+	It("marks Degraded when the referenced LDAPProvider does not exist", func() {
+		binding := &ldaprbacv1alpha1.RBACGroupBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: "no-such-provider-binding", Namespace: namespace},
+			Spec: ldaprbacv1alpha1.RBACGroupBindingSpec{
+				ProviderRef: "no-such-provider",
+				GroupDN:     groupDN,
+				RoleRef:     ldaprbacv1alpha1.RoleRef{Kind: "ClusterRole", Name: "view"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, binding))).To(Succeed())
+		})
+
+		Eventually(func() (metav1.ConditionStatus, error) {
+			var updated ldaprbacv1alpha1.RBACGroupBinding
+			if err := k8sClient.Get(ctx, client.ObjectKey{Name: binding.Name, Namespace: namespace}, &updated); err != nil {
+				return "", err
+			}
+			for _, c := range updated.Status.Conditions {
+				if c.Type == ldaprbacv1alpha1.ConditionDegraded {
+					return c.Status, nil
+				}
+			}
+			return "", nil
+		}).Should(Equal(metav1.ConditionTrue))
+	})
+
+	It("marks Degraded when the directory returns an error other than group-not-found", func() {
+		const queryErrGroupDN = "cn=query-error,ou=groups,dc=corp,dc=local"
+
+		rbacGroupBindingGrouper.setForcedGroupError(queryErrGroupDN, errors.New("simulated query failure"))
+		DeferCleanup(func() { rbacGroupBindingGrouper.clearForcedGroupError(queryErrGroupDN) })
+
+		binding := &ldaprbacv1alpha1.RBACGroupBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: "query-error-binding", Namespace: namespace},
+			Spec: ldaprbacv1alpha1.RBACGroupBindingSpec{
+				ProviderRef: providerName,
+				GroupDN:     queryErrGroupDN,
+				RoleRef:     ldaprbacv1alpha1.RoleRef{Kind: "ClusterRole", Name: "view"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, binding))).To(Succeed())
+		})
+
+		Eventually(func() (map[string]metav1.ConditionStatus, error) {
+			var updated ldaprbacv1alpha1.RBACGroupBinding
+			if err := k8sClient.Get(ctx, client.ObjectKey{Name: binding.Name, Namespace: namespace}, &updated); err != nil {
+				return nil, err
+			}
+			out := map[string]metav1.ConditionStatus{}
+			for _, c := range updated.Status.Conditions {
+				out[c.Type] = c.Status
+			}
+			return out, nil
+		}).Should(SatisfyAll(
+			HaveKeyWithValue(ldaprbacv1alpha1.ConditionDegraded, metav1.ConditionTrue),
+			HaveKeyWithValue(ldaprbacv1alpha1.ConditionGroupNotFound, metav1.ConditionFalse),
+		))
+	})
+
 	It("leaves the managed RoleBinding's subjects untouched when the directory becomes unreachable", func() {
 		const failsafeProvider = "corp-ad-failsafe"
 		const failsafeBinding = "data-team-failsafe"

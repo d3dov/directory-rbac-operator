@@ -84,8 +84,9 @@ var _ = BeforeSuite(func() {
 	Expect((&LDAPProviderReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Pinger:   &stubPingerResolver{},
+		Pinger:   ldapProviderPinger,
 		Recorder: mgr.GetEventRecorder("ldapprovider-controller"),
+		Limiters: ldapProviderLimiters,
 	}).SetupWithManager(mgr)).To(Succeed())
 
 	go func() {
@@ -123,18 +124,20 @@ var (
 type stubGrouperResolver struct {
 	groups map[string][]string
 
-	mu        sync.Mutex
-	forcedErr map[string]error
+	mu             sync.Mutex
+	forcedErr      map[string]error
+	forcedGroupErr map[string]error
 }
 
 func (s *stubGrouperResolver) Grouper(_ context.Context, provider *ldaprbacv1alpha1.LDAPProvider) (ldapclient.Grouper, error) {
 	s.mu.Lock()
 	err := s.forcedErr[provider.Name]
+	groupErrs := s.forcedGroupErr
 	s.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
-	return &fake.Grouper{Groups: s.groups}, nil
+	return &fake.Grouper{Groups: s.groups, Errors: groupErrs}, nil
 }
 
 // setForcedError makes every subsequent Grouper() call for providerName fail
@@ -154,15 +157,67 @@ func (s *stubGrouperResolver) clearForcedError(providerName string) {
 	delete(s.forcedErr, providerName)
 }
 
-// stubPingerResolver always reports success, since the health-check specs
-// only exercise LDAPProviderReconciler's own TLS-validation and status
-// wiring, never a real bind.
-type stubPingerResolver struct{}
-
-func (s *stubPingerResolver) Pinger(_ context.Context, _ *ldaprbacv1alpha1.LDAPProvider) (ldapclient.Pinger, error) {
-	return stubPinger{}, nil
+// setForcedGroupError makes GetGroupMembers(groupDN) fail with err, unlike
+// setForcedError above (which fails resolving a Grouper at all) - this
+// simulates a directory error distinct from a confirmed-absent group, which
+// a Groups miss already covers.
+func (s *stubGrouperResolver) setForcedGroupError(groupDN string, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.forcedGroupErr == nil {
+		s.forcedGroupErr = map[string]error{}
+	}
+	s.forcedGroupErr[groupDN] = err
 }
 
-type stubPinger struct{}
+func (s *stubGrouperResolver) clearForcedGroupError(groupDN string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.forcedGroupErr, groupDN)
+}
 
-func (stubPinger) Ping(_ context.Context) error { return nil }
+// ldapProviderPinger is the PingerResolver LDAPProviderReconciler is wired
+// against, kept as a suite-level var so a specific spec can force a bind
+// failure (simulating an unreachable directory) without a real one.
+var ldapProviderPinger = &stubPingerResolver{}
+
+// ldapProviderLimiters is the same registry a real GrouperFactory would draw
+// rate limiters from; kept as a suite-level var so a spec can prove
+// LDAPProviderReconciler cleans up a deleted provider's entry.
+var ldapProviderLimiters = &ldapclient.Limiters{}
+
+// stubPingerResolver reports success by default, since most health-check
+// specs only exercise LDAPProviderReconciler's own TLS-validation and status
+// wiring, never a real bind.
+type stubPingerResolver struct {
+	mu        sync.Mutex
+	forcedErr map[string]error
+}
+
+func (s *stubPingerResolver) Pinger(_ context.Context, provider *ldaprbacv1alpha1.LDAPProvider) (ldapclient.Pinger, error) {
+	s.mu.Lock()
+	err := s.forcedErr[provider.Name]
+	s.mu.Unlock()
+	return stubPinger{err: err}, nil
+}
+
+// setForcedError makes every subsequent Ping() for providerName fail with
+// err, as if the directory had become unreachable.
+func (s *stubPingerResolver) setForcedError(providerName string, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.forcedErr == nil {
+		s.forcedErr = map[string]error{}
+	}
+	s.forcedErr[providerName] = err
+}
+
+func (s *stubPingerResolver) clearForcedError(providerName string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.forcedErr, providerName)
+}
+
+type stubPinger struct{ err error }
+
+func (p stubPinger) Ping(_ context.Context) error { return p.err }

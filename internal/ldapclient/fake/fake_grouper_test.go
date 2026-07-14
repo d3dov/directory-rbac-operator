@@ -30,3 +30,16 @@ func TestGrouperGetGroupMembersNotFound(t *testing.T) {
 		t.Fatalf("expected ErrGroupNotFound, got: %v", err)
 	}
 }
+
+func TestGrouperGetGroupMembersForcedError(t *testing.T) {
+	forced := errors.New("simulated query failure")
+	g := &Grouper{
+		Groups: map[string][]string{"cn=data-team,ou=groups,dc=corp,dc=local": {"alice"}},
+		Errors: map[string]error{"cn=data-team,ou=groups,dc=corp,dc=local": forced},
+	}
+
+	_, err := g.GetGroupMembers(context.Background(), "cn=data-team,ou=groups,dc=corp,dc=local")
+	if !errors.Is(err, forced) {
+		t.Fatalf("GetGroupMembers() error = %v, want the forced error even though Groups has an entry", err)
+	}
+}
