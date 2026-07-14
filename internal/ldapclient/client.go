@@ -10,7 +10,36 @@ import (
 
 	"github.com/go-ldap/ldap/v3"
 	"golang.org/x/time/rate"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+// DefaultPageSize is the RFC 2696 simple paged results page size requested
+// for the reverse membership query. It matches Active Directory's own
+// default MaxPageSize, which is also the size at which an unpaged search
+// against AD silently truncates - a group with more members than this
+// simply lost the rest with no error, before paging was requested at all.
+// Paging is requested unconditionally rather than only for
+// DirectoryTypeActiveDirectory: RFC 2696 is a generic LDAP control that
+// OpenLDAP and 389-ds also implement, and a server that doesn't recognize it
+// just returns a normal, single, capped response - identical to the
+// pre-paging behavior - so there is no backend-specific case to gate here.
+const DefaultPageSize uint32 = 1000
+
+// ldapConn is the subset of *ldap.Conn that Client's query helpers use.
+// Extracting it lets paging and referral-handling behavior be verified
+// against a fake: the vjeantet/ldapserver instance used by the wire tests
+// elsewhere in this package doesn't parse or emit LDAP controls at all, so
+// it cannot simulate an RFC 2696 paged response.
+type ldapConn interface {
+	Bind(username, password string) error
+	StartTLS(config *tls.Config) error
+	SetTimeout(timeout time.Duration)
+	Search(searchRequest *ldap.SearchRequest) (*ldap.SearchResult, error)
+	SearchWithPaging(searchRequest *ldap.SearchRequest, pagingSize uint32) (*ldap.SearchResult, error)
+	Close() error
+}
+
+var _ ldapConn = (*ldap.Conn)(nil)
 
 // Config holds everything needed to open a connection and resolve group
 // membership against a single LDAPProvider.
@@ -31,10 +60,24 @@ type Config struct {
 	GroupSearchBase   string
 	UsernameAttribute string
 
+	// PageSize overrides DefaultPageSize for the reverse membership query's
+	// RFC 2696 paging control. Zero means DefaultPageSize; there is
+	// currently no LDAPProviderSpec field surfacing this, since the default
+	// already matches what it's chosen to match (AD's own MaxPageSize) and
+	// nothing has yet needed to tune it per provider.
+	PageSize uint32
+
 	// Limiter, if set, is waited on before every dial - shared across every
 	// Client built for the same provider (see Limiters), so the request
 	// budget is enforced per directory, not per Client instance.
 	Limiter *rate.Limiter
+}
+
+func (c *Client) pageSize() uint32 {
+	if c.cfg.PageSize == 0 {
+		return DefaultPageSize
+	}
+	return c.cfg.PageSize
 }
 
 // Client resolves group membership by dialing, binding and querying fresh on
@@ -101,12 +144,12 @@ func (c *Client) GetGroupMembers(ctx context.Context, groupDN string) ([]string,
 	}
 	defer func() { _ = conn.Close() }()
 
-	groupEntry, err := c.lookupGroup(conn, groupDN)
+	groupEntry, err := c.lookupGroup(ctx, conn, groupDN)
 	if err != nil {
 		return nil, err
 	}
 
-	members, err := c.resolveMembers(conn, groupDN, groupEntry)
+	members, err := c.resolveMembers(ctx, conn, groupDN, groupEntry)
 	if err != nil {
 		return nil, fmt.Errorf("ldapclient: resolve members for %s: %w", groupDN, err)
 	}
@@ -148,7 +191,7 @@ func (c *Client) tlsConfig() *tls.Config {
 // lookupGroup confirms groupDN exists and returns its entry, fetching the
 // member/uniqueMember attributes needed by the fallback path in
 // resolveMembers.
-func (c *Client) lookupGroup(conn *ldap.Conn, groupDN string) (*ldap.Entry, error) {
+func (c *Client) lookupGroup(ctx context.Context, conn ldapConn, groupDN string) (*ldap.Entry, error) {
 	req := ldap.NewSearchRequest(
 		groupDN,
 		ldap.ScopeBaseObject, ldap.NeverDerefAliases, 0, 0, false,
@@ -162,8 +205,13 @@ func (c *Client) lookupGroup(conn *ldap.Conn, groupDN string) (*ldap.Entry, erro
 		if ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject) {
 			return nil, fmt.Errorf("ldapclient: %w: %s", ErrGroupNotFound, groupDN)
 		}
+		if ldap.IsErrorWithCode(err, ldap.LDAPResultReferral) {
+			logReferralChasingSkipped(ctx, "group lookup", groupDN)
+			return nil, fmt.Errorf("ldapclient: lookup group %s: directory returned a referral instead of a result, and referral chasing is not implemented: %w", groupDN, err)
+		}
 		return nil, fmt.Errorf("ldapclient: lookup group %s: %w", groupDN, err)
 	}
+	logReferrals(ctx, "group lookup", groupDN, result.Referrals)
 	if len(result.Entries) == 0 {
 		return nil, fmt.Errorf("ldapclient: %w: %s", ErrGroupNotFound, groupDN)
 	}
@@ -176,7 +224,11 @@ func (c *Client) lookupGroup(conn *ldap.Conn, groupDN string) (*ldap.Entry, erro
 // OpenLDAP) never match that filter even for non-empty groups, so a group
 // with no reverse-query hits falls back to resolving its own
 // member/uniqueMember attribute instead.
-func (c *Client) resolveMembers(conn *ldap.Conn, groupDN string, groupEntry *ldap.Entry) ([]string, error) {
+//
+// The reverse query is the one search in this file that can plausibly
+// return more entries than a server's unpaged response cap, so it's the
+// only one issued via SearchWithPaging rather than Search.
+func (c *Client) resolveMembers(ctx context.Context, conn ldapConn, groupDN string, groupEntry *ldap.Entry) ([]string, error) {
 	filter := fmt.Sprintf("(memberOf=%s)", ldap.EscapeFilter(groupDN))
 	req := ldap.NewSearchRequest(
 		c.cfg.UserSearchBase,
@@ -186,10 +238,14 @@ func (c *Client) resolveMembers(conn *ldap.Conn, groupDN string, groupEntry *lda
 		nil,
 	)
 
-	result, err := conn.Search(req)
+	result, err := conn.SearchWithPaging(req, c.pageSize())
 	if err != nil {
+		if ldap.IsErrorWithCode(err, ldap.LDAPResultReferral) {
+			logReferralChasingSkipped(ctx, "reverse membership query", groupDN)
+		}
 		return nil, fmt.Errorf("query members via memberOf: %w", err)
 	}
+	logReferrals(ctx, "reverse membership query", groupDN, result.Referrals)
 	if len(result.Entries) > 0 {
 		return usernames(result.Entries, c.cfg.UsernameAttribute), nil
 	}
@@ -203,7 +259,7 @@ func (c *Client) resolveMembers(conn *ldap.Conn, groupDN string, groupEntry *lda
 
 	members := make([]string, 0, len(memberDNs))
 	for _, dn := range memberDNs {
-		username, err := c.lookupUsername(conn, dn)
+		username, err := c.lookupUsername(ctx, conn, dn)
 		if err != nil {
 			return nil, fmt.Errorf("resolve member %q: %w", dn, err)
 		}
@@ -214,7 +270,7 @@ func (c *Client) resolveMembers(conn *ldap.Conn, groupDN string, groupEntry *lda
 	return members, nil
 }
 
-func (c *Client) lookupUsername(conn *ldap.Conn, dn string) (string, error) {
+func (c *Client) lookupUsername(ctx context.Context, conn ldapConn, dn string) (string, error) {
 	req := ldap.NewSearchRequest(
 		dn,
 		ldap.ScopeBaseObject, ldap.NeverDerefAliases, 0, 0, false,
@@ -230,12 +286,47 @@ func (c *Client) lookupUsername(conn *ldap.Conn, dn string) (string, error) {
 			// group); skip it rather than fail the whole sync.
 			return "", nil
 		}
+		if ldap.IsErrorWithCode(err, ldap.LDAPResultReferral) {
+			// The member DN lives in a naming context this connection
+			// wasn't pointed at (e.g. another domain in an AD forest).
+			// Chasing it isn't implemented, so it's skipped like a stale
+			// DN rather than failing the whole group's sync over one
+			// member.
+			logReferralChasingSkipped(ctx, "member lookup", dn)
+			return "", nil
+		}
 		return "", err
 	}
+	logReferrals(ctx, "member lookup", dn, result.Referrals)
 	if len(result.Entries) == 0 {
 		return "", nil
 	}
 	return result.Entries[0].GetAttributeValue(c.cfg.UsernameAttribute), nil
+}
+
+// logReferrals surfaces continuation references returned alongside an
+// otherwise-successful result (as opposed to a response that is itself a
+// referral - see logReferralChasingSkipped). Silently dropping these would
+// make a group's membership look smaller than it is - e.g. in a multi-domain
+// AD forest, where part of a group's membership can live in another domain -
+// with nothing in the logs to explain why.
+func logReferrals(ctx context.Context, operation, subjectDN string, referrals []string) {
+	if len(referrals) == 0 {
+		return
+	}
+	logf.FromContext(ctx).Info("directory returned referrals that will not be followed",
+		"operation", operation, "dn", subjectDN, "referrals", referrals)
+}
+
+// logReferralChasingSkipped logs the explicit decision not to follow a
+// referral the directory returned in place of a result. Chasing it would
+// mean opening a connection to a server address supplied by the directory
+// at runtime, one this operator has no configured credentials or TLS trust
+// for - treated here as a deliberate non-goal rather than a gap to silently
+// paper over.
+func logReferralChasingSkipped(ctx context.Context, operation, subjectDN string) {
+	logf.FromContext(ctx).Info("directory returned a referral instead of a result; referral chasing is not implemented",
+		"operation", operation, "dn", subjectDN)
 }
 
 func usernames(entries []*ldap.Entry, attr string) []string {
