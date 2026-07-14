@@ -52,6 +52,18 @@ jobs:
       - name: Test
         run: make test
 
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Enforce per-package coverage thresholds
+        run: make coverage
+
   helm-lint:
     runs-on: ubuntu-latest
     steps:

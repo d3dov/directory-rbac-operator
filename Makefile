@@ -63,6 +63,16 @@ test: fmt vet envtest
 	KUBEBUILDER_ASSETS="$$(go run sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
 		go test ./... -count=1
 
+# coverage enforces a minimum coverage percentage per package for the
+# packages holding this operator's business logic (see hack/check-coverage.sh
+# for the exact thresholds and reasoning). Excluded on purpose: main.go
+# (wiring, no branching logic), api/v1alpha1/zz_generated.deepcopy.go
+# (generated), and internal/version (a single build-time-injected var).
+.PHONY: coverage
+coverage: envtest
+	KUBEBUILDER_ASSETS="$$(go run sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
+		./hack/check-coverage.sh
+
 CHART_DIR := charts/directory-rbac-operator
 
 .PHONY: helm-crds
