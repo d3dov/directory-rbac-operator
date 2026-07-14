@@ -86,6 +86,7 @@ func (f *GrouperFactory) client(ctx context.Context, provider *ldaprbacv1alpha1.
 		UserSearchBase:    provider.Spec.UserSearchBase,
 		GroupSearchBase:   provider.Spec.GroupSearchBase,
 		UsernameAttribute: provider.Spec.UsernameAttribute,
+		DirectoryType:     ldapclient.DirectoryType(provider.Spec.DirectoryType),
 		Limiter:           limiter,
 	}), nil
 }

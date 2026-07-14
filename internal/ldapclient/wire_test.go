@@ -24,6 +24,19 @@ import (
 // everywhere else. Query construction, username normalization and
 // rate-limiter interaction are covered by the table-driven tests elsewhere
 // in this package instead - a real server buys little for those.
+//
+// Two things this file deliberately does not attempt to exercise, both
+// because vjeantet/ldapserver's minimal protocol support can't simulate
+// them, not because they're untested elsewhere:
+//   - RFC 2696 paging: it doesn't parse or emit LDAP controls at all, so
+//     there's no way to make it hand back a paging cookie. See paging_test.go
+//     for the fake-ldapConn-based tests that cover this instead.
+//   - the AD nested-group extensible-match filter
+//     ((memberOf:1.2.840.113556.1.4.1941:=...)): a real go-ldap client
+//     sending one deadlocks its request reader (confirmed by hand before
+//     writing nested_test.go's fake-based coverage instead) - its bundled
+//     goldap message decoder has no case for FilterExtensibleMatch in the
+//     path that would otherwise let a handler respond to it.
 
 const (
 	testBindDN       = "cn=svc,dc=corp,dc=local"

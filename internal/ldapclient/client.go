@@ -25,6 +25,35 @@ import (
 // pre-paging behavior - so there is no backend-specific case to gate here.
 const DefaultPageSize uint32 = 1000
 
+// DirectoryType mirrors api/v1alpha1.DirectoryType's values without
+// importing that package: ldapclient has no other dependency on the CRD
+// API, and GrouperFactory already translates every other LDAPProviderSpec
+// field into ldapclient.Config the same way.
+type DirectoryType string
+
+const (
+	// DirectoryTypeOpenLDAP is the zero value's behavior: a plain memberOf
+	// equality filter, no AD-specific matching rule.
+	DirectoryTypeOpenLDAP DirectoryType = "OpenLDAP"
+
+	// DirectoryTypeActiveDirectory enables MatchingRuleInChainOID on the
+	// reverse membership query.
+	DirectoryTypeActiveDirectory DirectoryType = "ActiveDirectory"
+
+	// DirectoryTypeFreeIPA behaves like DirectoryTypeOpenLDAP: 389-ds
+	// computes memberOf recursively itself, so a plain filter already sees
+	// flattened membership without the AD-specific matching rule.
+	DirectoryTypeFreeIPA DirectoryType = "FreeIPA"
+)
+
+// MatchingRuleInChainOID is Microsoft's LDAP_MATCHING_RULE_IN_CHAIN matching
+// rule. Applied to memberOf in a search filter, it makes Active Directory
+// itself walk the memberOf chain transitively: a user who is only a direct
+// member of GroupA, which is itself a member of GroupB, matches a filter
+// asking for GroupB's members even though the user's own memberOf attribute
+// never lists GroupB directly.
+const MatchingRuleInChainOID = "1.2.840.113556.1.4.1941"
+
 // ldapConn is the subset of *ldap.Conn that Client's query helpers use.
 // Extracting it lets paging and referral-handling behavior be verified
 // against a fake: the vjeantet/ldapserver instance used by the wire tests
@@ -59,6 +88,10 @@ type Config struct {
 	UserSearchBase    string
 	GroupSearchBase   string
 	UsernameAttribute string
+
+	// DirectoryType selects backend-specific query behavior. The zero value
+	// behaves as DirectoryTypeOpenLDAP.
+	DirectoryType DirectoryType
 
 	// PageSize overrides DefaultPageSize for the reverse membership query's
 	// RFC 2696 paging control. Zero means DefaultPageSize; there is
@@ -229,7 +262,7 @@ func (c *Client) lookupGroup(ctx context.Context, conn ldapConn, groupDN string)
 // return more entries than a server's unpaged response cap, so it's the
 // only one issued via SearchWithPaging rather than Search.
 func (c *Client) resolveMembers(ctx context.Context, conn ldapConn, groupDN string, groupEntry *ldap.Entry) ([]string, error) {
-	filter := fmt.Sprintf("(memberOf=%s)", ldap.EscapeFilter(groupDN))
+	filter := c.membershipFilter(groupDN)
 	req := ldap.NewSearchRequest(
 		c.cfg.UserSearchBase,
 		ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
@@ -268,6 +301,22 @@ func (c *Client) resolveMembers(ctx context.Context, conn ldapConn, groupDN stri
 		}
 	}
 	return members, nil
+}
+
+// membershipFilter builds the reverse-membership filter for groupDN.
+// DirectoryTypeActiveDirectory adds MatchingRuleInChainOID to memberOf, so
+// nested group membership resolves server-side (see the constant's doc).
+// Every other DirectoryType - including the zero value and
+// DirectoryTypeFreeIPA - uses a plain equality filter matching only entries
+// whose memberOf directly names groupDN: FreeIPA's 389-ds computes memberOf
+// recursively itself, so a plain filter already sees flattened membership
+// there without the AD-specific matching rule.
+func (c *Client) membershipFilter(groupDN string) string {
+	dn := ldap.EscapeFilter(groupDN)
+	if c.cfg.DirectoryType == DirectoryTypeActiveDirectory {
+		return fmt.Sprintf("(memberOf:%s:=%s)", MatchingRuleInChainOID, dn)
+	}
+	return fmt.Sprintf("(memberOf=%s)", dn)
 }
 
 func (c *Client) lookupUsername(ctx context.Context, conn ldapConn, dn string) (string, error) {
