@@ -41,7 +41,11 @@ func (r *LDAPProviderReadiness) Check(_ *http.Request) error {
 
 	for i := range providers.Items {
 		provider := &providers.Items[i]
-		if condition := findCondition(provider.Status.Conditions, ldaprbacv1alpha1.ConditionReady); condition != nil && condition.Status != metav1.ConditionTrue {
+		condition := findCondition(provider.Status.Conditions, ldaprbacv1alpha1.ConditionReady)
+		if condition == nil {
+			return fmt.Errorf("LDAPProvider %q has not completed a readiness check", provider.Name)
+		}
+		if condition.Status != metav1.ConditionTrue {
 			return fmt.Errorf("LDAPProvider %q is not ready: %s", provider.Name, condition.Reason)
 		}
 	}

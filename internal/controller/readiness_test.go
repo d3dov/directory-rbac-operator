@@ -25,6 +25,7 @@ func TestLDAPProviderReadinessUsesCachedProviderStatus(t *testing.T) {
 			providers: []runtime.Object{&ldaprbacv1alpha1.LDAPProvider{
 				ObjectMeta: metav1.ObjectMeta{Name: "not-yet-reconciled"},
 			}},
+			wantErr: true,
 		},
 		{
 			name:      "ready provider",
