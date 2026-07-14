@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/denis-da-engineer/directory-rbac-operator/internal/ldapclient"
+	"github.com/d3dov/directory-rbac-operator/internal/ldapclient"
 )
 
 func TestGrouperGetGroupMembers(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	ldaprbacv1alpha1 "github.com/denis-da-engineer/directory-rbac-operator/api/v1alpha1"
+	ldaprbacv1alpha1 "github.com/d3dov/directory-rbac-operator/api/v1alpha1"
 )
 
 const readinessCacheTimeout = time.Second

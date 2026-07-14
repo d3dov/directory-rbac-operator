@@ -6,7 +6,7 @@ import (
 
 	rbacv1 "k8s.io/api/rbac/v1"
 
-	ldaprbacv1alpha1 "github.com/denis-da-engineer/directory-rbac-operator/api/v1alpha1"
+	ldaprbacv1alpha1 "github.com/d3dov/directory-rbac-operator/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

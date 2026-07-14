@@ -15,10 +15,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	ldaprbacv1alpha1 "github.com/denis-da-engineer/directory-rbac-operator/api/v1alpha1"
-	"github.com/denis-da-engineer/directory-rbac-operator/internal/controller"
-	"github.com/denis-da-engineer/directory-rbac-operator/internal/ldapclient"
-	"github.com/denis-da-engineer/directory-rbac-operator/internal/version"
+	ldaprbacv1alpha1 "github.com/d3dov/directory-rbac-operator/api/v1alpha1"
+	"github.com/d3dov/directory-rbac-operator/internal/controller"
+	"github.com/d3dov/directory-rbac-operator/internal/ldapclient"
+	"github.com/d3dov/directory-rbac-operator/internal/version"
 )
 
 var scheme = runtime.NewScheme()

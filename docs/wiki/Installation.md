@@ -4,7 +4,7 @@ Install the chart after creating a Secret containing the provider bind
 password in the operator's secret namespace:
 
 ```sh
-helm install ldaprbac oci://ghcr.io/denis-da-engineer/charts/directory-rbac-operator \
+helm install ldaprbac oci://ghcr.io/d3dov/charts/directory-rbac-operator \
   --namespace ldaprbac-system --create-namespace
 ```
 

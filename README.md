@@ -1,9 +1,9 @@
 # directory-rbac-operator
 
-[![CI](https://github.com/denis-da-engineer/directory-rbac-operator/actions/workflows/ci.yaml/badge.svg)](https://github.com/denis-da-engineer/directory-rbac-operator/actions/workflows/ci.yaml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/denis-da-engineer/directory-rbac-operator)](https://goreportcard.com/report/github.com/denis-da-engineer/directory-rbac-operator)
+[![CI](https://github.com/d3dov/directory-rbac-operator/actions/workflows/ci.yaml/badge.svg)](https://github.com/d3dov/directory-rbac-operator/actions/workflows/ci.yaml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/d3dov/directory-rbac-operator)](https://goreportcard.com/report/github.com/d3dov/directory-rbac-operator)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/denis-da-engineer/directory-rbac-operator)](https://github.com/denis-da-engineer/directory-rbac-operator/releases)
+[![Release](https://img.shields.io/github/v/release/d3dov/directory-rbac-operator)](https://github.com/d3dov/directory-rbac-operator/releases)
 
 A coverage badge is intentionally not included yet: doing so honestly needs a
 Codecov/Coveralls account and upload token, which isn't set up. Per-package

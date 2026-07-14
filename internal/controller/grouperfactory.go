@@ -10,8 +10,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	ldaprbacv1alpha1 "github.com/denis-da-engineer/directory-rbac-operator/api/v1alpha1"
-	"github.com/denis-da-engineer/directory-rbac-operator/internal/ldapclient"
+	ldaprbacv1alpha1 "github.com/d3dov/directory-rbac-operator/api/v1alpha1"
+	"github.com/d3dov/directory-rbac-operator/internal/ldapclient"
 )
 
 // GrouperResolver turns an LDAPProvider into something that can answer group

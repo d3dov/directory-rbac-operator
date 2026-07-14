@@ -18,8 +18,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	ldaprbacv1alpha1 "github.com/denis-da-engineer/directory-rbac-operator/api/v1alpha1"
-	"github.com/denis-da-engineer/directory-rbac-operator/internal/ldapclient"
+	ldaprbacv1alpha1 "github.com/d3dov/directory-rbac-operator/api/v1alpha1"
+	"github.com/d3dov/directory-rbac-operator/internal/ldapclient"
 )
 
 // generateSelfSignedCertPEM returns a throwaway self-signed certificate,

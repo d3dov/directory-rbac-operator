@@ -4,9 +4,9 @@ description: Syncs LDAP/Active Directory group membership into Kubernetes RoleBi
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
-home: https://github.com/denis-da-engineer/directory-rbac-operator
+home: https://github.com/d3dov/directory-rbac-operator
 sources:
-  - https://github.com/denis-da-engineer/directory-rbac-operator
+  - https://github.com/d3dov/directory-rbac-operator
 keywords:
   - ldap
   - active-directory

@@ -13,8 +13,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      IMAGE: ghcr.io/denis-da-engineer/directory-rbac-operator
-      CHART_REGISTRY: oci://ghcr.io/denis-da-engineer/charts
+      IMAGE: ghcr.io/d3dov/directory-rbac-operator
+      CHART_REGISTRY: oci://ghcr.io/d3dov/charts
     steps:
       - uses: actions/checkout@v4
         with:

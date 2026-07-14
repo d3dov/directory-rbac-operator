@@ -1,4 +1,4 @@
-// Copyright (c) 2026, denis-da-engineer
-// Use of this source code is governed by a BSD-3-Clause license that can be
+// Copyright (c) 2026, d3dov
+// Use of this source code is governed by an Apache-2.0 license that can be
 // found in the LICENSE file at the root of this repository.
 

@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/denis-da-engineer/directory-rbac-operator/internal/ldapclient"
+	"github.com/d3dov/directory-rbac-operator/internal/ldapclient"
 )
 
 // Grouper serves membership from an in-memory map keyed by group DN.

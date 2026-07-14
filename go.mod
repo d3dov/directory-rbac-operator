@@ -1,4 +1,4 @@
-module github.com/denis-da-engineer/directory-rbac-operator
+module github.com/d3dov/directory-rbac-operator
 
 go 1.26.0
 

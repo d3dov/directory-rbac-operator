@@ -8,7 +8,7 @@ podDisruptionBudget:
   minAvailable: 1
 
 image:
-  repository: ghcr.io/denis-da-engineer/directory-rbac-operator
+  repository: ghcr.io/d3dov/directory-rbac-operator
   tag: ""
   pullPolicy: IfNotPresent
 

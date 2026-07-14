@@ -12,7 +12,7 @@ Please **do not** open a public GitHub issue for security vulnerabilities.
 
 Instead, report it privately using one of:
 
-- [GitHub Security Advisories](https://github.com/denis-da-engineer/directory-rbac-operator/security/advisories/new)
+- [GitHub Security Advisories](https://github.com/d3dov/directory-rbac-operator/security/advisories/new)
   for this repository (preferred - keeps the report and discussion private
   until a fix ships).
 - Email gibsartines@gmail.com with a description of the issue and, if

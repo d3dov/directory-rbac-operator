@@ -15,9 +15,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	ldaprbacv1alpha1 "github.com/denis-da-engineer/directory-rbac-operator/api/v1alpha1"
-	"github.com/denis-da-engineer/directory-rbac-operator/internal/ldapclient"
-	"github.com/denis-da-engineer/directory-rbac-operator/internal/metrics"
+	ldaprbacv1alpha1 "github.com/d3dov/directory-rbac-operator/api/v1alpha1"
+	"github.com/d3dov/directory-rbac-operator/internal/ldapclient"
+	"github.com/d3dov/directory-rbac-operator/internal/metrics"
 )
 
 const ldapProviderKind = "LDAPProvider"

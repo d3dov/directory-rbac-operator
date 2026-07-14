@@ -41,4 +41,4 @@ Until the first tagged release, everything lives under `[Unreleased]`.
 - GitHub Actions CI (build/vet/fmt/generated-artifact drift/unit+envtest,
   Helm lint) and a separate E2E workflow.
 
-[Unreleased]: https://github.com/denis-da-engineer/directory-rbac-operator/commits/main
+[Unreleased]: https://github.com/d3dov/directory-rbac-operator/commits/main
