@@ -1,5 +1,12 @@
 replicaCount: 1
 
+# Keep one controller pod available during voluntary disruptions. For HA
+# installations, raise replicaCount and adjust minAvailable to match the
+# availability budget required by the cluster.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
 image:
   repository: ghcr.io/denis-da-engineer/directory-rbac-operator
   tag: ""
